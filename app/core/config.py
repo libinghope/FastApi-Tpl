@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     MYSQL_DB: str
 
     # Security
-    SECRET_KEY: str = "changethis"
+    SECRET_KEY: str = "changethis123456789"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 8
     MAX_LOGIN_ATTEMPTS: int = 5
     LOGIN_LOCKOUT_MINUTES: int = 15

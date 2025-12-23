@@ -8,6 +8,8 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 
 
 def get_password_hash(password: str) -> str:
+    # bcrypt限制密码长度为72字节
+    password = password[:72]
     return pwd_context.hash(password)
 
 
