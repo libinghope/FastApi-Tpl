@@ -5,12 +5,13 @@ from app.main import app
 from app.api import deps
 from app.models.sys.user import SysUser
 from app.core import security
-from app.core.config import settings  # 添加settings导入
 from app.core.config import settings
-# Mock User Data - 确保密码不会直接用于哈希计算，而是依赖conftest.py中的mock
+
 # Mock User Data
+MOCK_PASSWORD = "password"
 # 不再直接调用security.get_password_hash，而是直接设置一个模拟的哈希值
 MOCK_HASHED_PASSWORD = security.get_password_hash(MOCK_PASSWORD)
+MOCK_USER = SysUser(
     id=1, username="testadmin", hashed_password=MOCK_HASHED_PASSWORD, is_active=True
 )
 
@@ -48,7 +49,7 @@ def override_get_db(mock_db_session):
 async def test_login_success(client: AsyncClient, override_get_db, mock_redis_manager):
     """Test successful login"""
     response = await client.post(
-        f"{settings.API_V1_STR}/login/access-token",
+        f"{settings.API_V1_STR}/admin/auth/login",
         json={"username": "testadmin", "password": MOCK_PASSWORD},
     )
     assert response.status_code == 200
@@ -79,7 +80,7 @@ async def test_login_wrong_password(
     )
 
     response = await client.post(
-        f"{settings.API_V1_STR}/login/access-token",
+        f"{settings.API_V1_STR}/admin/auth/login",
         json={"username": "testadmin", "password": "wrongpassword"},
     )
     assert response.status_code == 400
@@ -101,7 +102,7 @@ async def test_login_user_not_found(
     mock_db_session.execute.return_value = mock_result
 
     response = await client.post(
-        f"{settings.API_V1_STR}/login/access-token",
+        f"{settings.API_V1_STR}/admin/auth/login",
         json={"username": "unknown", "password": "password"},
     )
     # The current implementation might return "Incorrect username or password" for security
@@ -137,7 +138,7 @@ async def test_login_inactive_user(
     mock_db_session.execute.return_value = mock_result
 
     response = await client.post(
-        f"{settings.API_V1_STR}/login/access-token",
+        f"{settings.API_V1_STR}/admin/auth/login",
         json={"username": "testadmin", "password": MOCK_PASSWORD},
     )
     assert response.status_code == 400
@@ -157,7 +158,7 @@ async def test_login_locked_user(
     )
 
     response = await client.post(
-        f"{settings.API_V1_STR}/login/access-token",
+        f"{settings.API_V1_STR}/admin/auth/login",
         json={"username": "testadmin", "password": MOCK_PASSWORD},
     )
     assert response.status_code == 400

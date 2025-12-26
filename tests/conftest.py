@@ -73,11 +73,7 @@ def mock_redis_manager(mocker):
     mocker.patch("app.db.redis.RedisManager.set", new_callable=AsyncMock)
     mocker.patch("app.db.redis.RedisManager.delete", new_callable=AsyncMock)
 
-@pytest.fixture(autouse=True)
-def mock_password_hashing(mocker):
-    # 模拟密码哈希函数，避免bcrypt长度限制问题
-    mocker.patch("app.core.security.get_password_hash", return_value="hashed_password")
-    mocker.patch("app.core.security.verify_password", return_value=True)
+
 
 @pytest.fixture(scope="module")
 def anyio_backend():
