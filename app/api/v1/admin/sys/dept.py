@@ -1,98 +1,202 @@
-from typing import List
-from fastapi import APIRouter, Depends
-from api.globals.error import ErrorCode
-from api.services.admin.dept_service import DeptService, get_dept_service
-from app.api.deps import get_current_user
-from app.models.sys.user import SysUser as User
-from api.schemes.admin.dept import DeptForm, DeptInfo
-from conf.config_web import Config
-from app.api.deps import get_db as get_async_session
-from api.models.sys.sys_dept import SysDept
-from api.globals.response import response
+from typing import List, Optional, Any
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from api.globals.error import DeptErrorCode
-from api.globals.constants import ROOT_NODE_PARENT_UID
-from api.schemes.base import DeleteObjsForm
-import traceback
+from sqlalchemy import select, insert, update, delete, desc
 
-config = Config()
-router = APIRouter(prefix="/backend", tags=["dept"])
+from app.api import deps
+from app.models.sys.dept import SysDept
+from app.models.sys.user import SysUser
+from app.schemas.sys.dept import (
+    DeptCreate,
+    DeptUpdate,
+    DeptResponse,
+    DeptTree,
+    DeleteObjsForm
+)
 
+router = APIRouter()
 
-@router.post("/dept/update")
-async def update_dept(
-    deptUpdateForm: DeptForm,
-    user: User = Depends(get_current_user),
-    dept_service: DeptService = Depends(get_dept_service),
+@router.get("/tree", response_model=List[DeptTree])
+async def get_dept_tree(
+    name: Optional[str] = None,
+    status: Optional[int] = None,
+    db: AsyncSession = Depends(deps.get_db),
+    current_user: SysUser = Depends(deps.get_current_user),
 ):
-    error_code = await dept_service.update_dept(deptUpdateForm, user.uid)
-    if error_code != DeptErrorCode.SUCCESS:
-        return response(code=error_code)
-    return response()
+    """
+    Get department tree
+    """
+    stmt = select(SysDept).order_by(SysDept.sort)
+    if name:
+        stmt = stmt.where(SysDept.name.like(f"%{name}%"))
+    if status is not None:
+        stmt = stmt.where(SysDept.status == status)
+        
+    result = await db.execute(stmt)
+    depts = result.scalars().all()
+    
+    # Build tree
+    return build_dept_tree(depts, 0)
 
-
-@router.get("/dept/tree")
-async def dept_tree(
-    name: str | None = "",
-    user: User = Depends(get_current_user),
-    dept_service: DeptService = Depends(get_dept_service),
-):
-    try:
-        dept_list, error_code = await dept_service.build_depts_list(keywords=name)
-        if error_code != DeptErrorCode.SUCCESS:
-            return response(code=error_code)
-        dept_tree = build_dept_children(ROOT_NODE_PARENT_UID, dept_list)
-
-        return response(result=[dept.model_dump() for dept in dept_tree])
-    except Exception as e:
-        print(e)
-        print(traceback.format_exc())
-        return response(code=ErrorCode.UNKNOWN_ERROR)
-
-
-@router.post("/dept/add")
-async def add_dept(
-    deptAddForm: DeptForm,
-    user: User = Depends(get_current_user),
-    dept_service: DeptService = Depends(get_dept_service),
-):
-    error_code = await dept_service.add_dept(deptAddForm, user.uid)
-    if error_code != DeptErrorCode.SUCCESS:
-        return response(code=error_code)
-    return response()
-
-
-# 获取部门下拉列表
-@router.get("/dept/options")
+@router.get("/options")
 async def get_dept_options(
-    name: str | None = "",
-    user: User = Depends(get_current_user),
-    dept_service: DeptService = Depends(get_dept_service),
+    db: AsyncSession = Depends(deps.get_db),
+    current_user: SysUser = Depends(deps.get_current_user),
 ):
-    dept_list, error_code = await dept_service.build_depts_list(keywords=name)
-    if error_code != DeptErrorCode.SUCCESS:
-        return response(code=error_code)
-    dept_tree = build_dept_children(ROOT_NODE_PARENT_UID, dept_list)
-    return response(result=[dept.model_dump() for dept in dept_tree])
+    """
+    Get department options (tree structure)
+    """
+    stmt = select(SysDept).where(SysDept.status == 1).order_by(SysDept.sort)
+    result = await db.execute(stmt)
+    depts = result.scalars().all()
+    
+    tree = build_dept_tree(depts, 0)
+    return {"result": [dept.model_dump() for dept in tree]}
 
+@router.post("/add")
+async def add_dept(
+    form: DeptCreate,
+    db: AsyncSession = Depends(deps.get_db),
+    current_user: SysUser = Depends(deps.get_current_user),
+):
+    """
+    Add department
+    """
+    # Check if code exists
+    stmt = select(SysDept).where(SysDept.code == form.code)
+    if await db.scalar(stmt):
+        raise HTTPException(status_code=400, detail="Department code already exists")
 
-@router.post("/dept/delete")
+    new_dept = SysDept(**form.model_dump())
+    new_dept.create_by = current_user.username
+    
+    # Handle tree path
+    # If parent_id is 0, path is "0"
+    # If parent_id is not 0, path is "parent_path,parent_id"
+    if new_dept.parent_id == 0:
+        new_dept.tree_path = "0"
+    else:
+        parent_stmt = select(SysDept).where(SysDept.id == new_dept.parent_id)
+        parent = await db.scalar(parent_stmt)
+        if not parent:
+            raise HTTPException(status_code=404, detail="Parent department not found")
+        if not parent.status: # Check if parent is disabled
+             raise HTTPException(status_code=400, detail="Parent department is disabled")
+        new_dept.tree_path = f"{parent.tree_path},{parent.id}"
+
+    db.add(new_dept)
+    await db.commit()
+    return {"code": 200, "message": "Success"}
+
+@router.put("/update")
+async def update_dept(
+    form: DeptUpdate,
+    db: AsyncSession = Depends(deps.get_db),
+    current_user: SysUser = Depends(deps.get_current_user),
+):
+    """
+    Update department
+    """
+    dept = await db.get(SysDept, form.id)
+    if not dept:
+        raise HTTPException(status_code=404, detail="Department not found")
+
+    if dept.id == form.parent_id:
+         raise HTTPException(status_code=400, detail="Cannot set parent to self")
+
+    # Check code uniqueness if changed
+    if form.code != dept.code:
+        stmt = select(SysDept).where(SysDept.code == form.code)
+        if await db.scalar(stmt):
+            raise HTTPException(status_code=400, detail="Department code already exists")
+    
+    # Update simple fields
+    dept.name = form.name
+    dept.code = form.code
+    dept.sort = form.sort
+    dept.status = form.status
+    dept.remark = form.remark
+    dept.update_by = current_user.username
+
+    # Handle parent change
+    if dept.parent_id != form.parent_id:
+        if form.parent_id == 0:
+            new_tree_path = "0"
+        else:
+            parent_stmt = select(SysDept).where(SysDept.id == form.parent_id)
+            parent = await db.scalar(parent_stmt)
+            if not parent:
+                 raise HTTPException(status_code=404, detail="Parent department not found")
+            new_tree_path = f"{parent.tree_path},{parent.id}"
+            
+        # Update children's tree_path? 
+        # Usually we need to update all children tree_paths recursively or by like query.
+        # This is complex. For now let's assume simple update.
+        # TODO: Update children tree_path if structure changes. 
+        # A simple way: find all children whose tree_path starts with old_path and replace prefix.
+        
+        old_tree_path = f"{dept.tree_path},{dept.id}"
+        new_level_tree_path = f"{new_tree_path},{dept.id}"
+        
+        # We need to find all descendants
+        # Descendants have tree_path like "old_tree_path,%"
+        # But wait, logic:
+        # Dept A (id 1, path 0). Child B (id 2, path 0,1). Child C (id 3, path 0,1,2).
+        # Move B to Root. B (id 2, path 0). C (id 3, path 0,2).
+        # Yes, we need to update descendants.
+        
+        dept.parent_id = form.parent_id
+        dept.tree_path = new_tree_path
+        
+        # Find descendants
+        descendants_stmt = select(SysDept).where(SysDept.tree_path.like(f"{old_tree_path}%"))
+        descendants_result = await db.execute(descendants_stmt)
+        descendants = descendants_result.scalars().all()
+        
+        for child in descendants:
+            # Replace prefix
+            # child.tree_path was "0,1,2" (old_tree_path "0,1")
+            # new_level_tree_path is "0,1" (if just moved same place)
+            # wait.
+            # old descendant path starts with old_tree_path.
+            # new descendant path should starts with new_level_tree_path.
+            suffix = child.tree_path[len(old_tree_path):]
+            child.tree_path = f"{new_level_tree_path}{suffix}"
+            
+    await db.commit()
+    return {"code": 200, "message": "Success"}
+
+@router.post("/delete")
 async def delete_dept(
-    ids_form: DeleteObjsForm,
-    user: User = Depends(get_current_user),
-    dept_service: DeptService = Depends(get_dept_service),
+    form: DeleteObjsForm,
+    db: AsyncSession = Depends(deps.get_db),
+    current_user: SysUser = Depends(deps.get_current_user),
 ):
-    error_code = await dept_service.delete_depts(ids_form.uid_arr, user.uid)
-    if error_code != DeptErrorCode.SUCCESS:
-        return response(code=error_code)
-    return response()
+    """
+    Delete department
+    """
+    # Check if any dept has children
+    stmt = select(SysDept).where(SysDept.parent_id.in_(form.ids))
+    if await db.scalar(stmt):
+         raise HTTPException(status_code=400, detail="Cannot delete department with children")
+         
+    # Check if assigned to users?
+    user_stmt = select(SysUser).where(SysUser.dept_id.in_(form.ids))
+    if await db.scalar(user_stmt):
+         raise HTTPException(status_code=400, detail="Cannot delete department with users")
+
+    await db.execute(delete(SysDept).where(SysDept.id.in_(form.ids)))
+    await db.commit()
+    return {"code": 200, "message": "Success"}
 
 
-def build_dept_children(parent_uid: str, dept_list: List[SysDept]) -> List[DeptInfo]:
-    children = []
-    for dept in dept_list:
-        if dept.parent_uid == parent_uid:
-            dept_vo = DeptInfo.model_validate(dept)
-            dept_vo.children = build_dept_children(dept_vo.uid, dept_list)
-            children.append(dept_vo)
-    return children
+def build_dept_tree(depts: List[SysDept], parent_id: int) -> List[DeptTree]:
+    tree = []
+    for dept in depts:
+        if dept.parent_id == parent_id:
+            node = DeptTree.model_validate(dept)
+            children = build_dept_tree(depts, dept.id)
+            if children:
+                node.children = children
+            tree.append(node)
+    return tree

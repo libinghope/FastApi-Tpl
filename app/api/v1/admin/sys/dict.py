@@ -1,88 +1,81 @@
-from typing import List
-from fastapi import APIRouter, Depends, HTTPException
+from typing import List, Optional
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.future import select
-from api.globals.error import ErrorCode
-from app.api.deps import get_current_user
-from app.models.sys.user import SysUser as User
-from api.schemes.admin.dict import DictForm, DictInfo
-from conf.config_web import Config
-from app.api.deps import get_db as get_async_session
-from api.models.sys.sys_dict import SysDict
-from api.globals.response import response
+from sqlalchemy import delete, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
-from api.globals.enum import GenderMapping
-from api.services.admin.dict_service import DictService, get_dict_service
-from api.schemes.base import DeleteObjsForm
 
-import traceback
+from app.api import deps
+from app.models.sys.user import SysUser
+from app.models.sys.dictionary import SysDict
+from app.schemas.sys.dict import DictCreate, DictUpdate, DictResponse, DeleteObjsForm
 
-config = Config()
+router = APIRouter()
 
-router = APIRouter(prefix="/backend", tags=["dict"])
-
-
-@router.get("/dicts/list")
-async def dict_list(
-    keywords: str | None = "",
+@router.get("/list", response_model=dict)
+async def list_dicts(
+    keywords: Optional[str] = None,
     page_size: int = 10,
     page_number: int = 1,
-    user: User = Depends(get_current_user),
-    dict_service: DictService = Depends(get_dict_service),
+    db: AsyncSession = Depends(deps.get_db),
+    current_user: SysUser = Depends(deps.get_current_user),
 ):
-    dict_list, total, error_code = await dict_service.query_dicts_list(keywords)
-    if error_code != ErrorCode.SUCCESS:
-        return response(code=error_code)
-    dict_info_list = [DictInfo.model_validate(d).model_dump() for d in dict_list]
-    return response(result={"list": dict_info_list, "total": total})
+    stmt = select(SysDict)
+    if keywords:
+        stmt = stmt.where(
+            or_(
+                SysDict.code.ilike(f"%{keywords}%"),
+                SysDict.name.ilike(f"%{keywords}%"),
+            )
+        )
+    
+    # Count
+    count_stmt = select(func.count()).select_from(stmt.subquery())
+    total = await db.scalar(count_stmt)
+    
+    # Paging
+    stmt = stmt.offset((page_number - 1) * page_size).limit(page_size).order_by(SysDict.sort)
+    result = await db.execute(stmt)
+    dicts = result.scalars().all()
+    
+    return {"list": [DictResponse.model_validate(d) for d in dicts], "total": total}
 
-
-@router.post("/dicts/add")
+@router.post("/add")
 async def add_dict(
-    dictForm: DictForm,
-    user: User = Depends(get_current_user),
-    dict_service: DictService = Depends(get_dict_service),
+    form: DictCreate,
+    db: AsyncSession = Depends(deps.get_db),
+    current_user: SysUser = Depends(deps.get_current_user),
 ):
-    error_code = await dict_service.add_dict(dictForm, user.uid)
-    if error_code != ErrorCode.SUCCESS:
-        return response(code=error_code)
-    return response()
+    stmt = select(SysDict).where(SysDict.code == form.code)
+    if await db.scalar(stmt):
+        raise HTTPException(status_code=400, detail="Dict code already exists")
+        
+    new_dict = SysDict(**form.model_dump())
+    db.add(new_dict)
+    await db.commit()
+    return {"code": 200, "message": "Success"}
 
-
-# 获取字典表单数据
-# @router.get("/dict/{dict_uid}/form")
-# async def get_dict_form(dict_uid: int):
-#     try:
-#         dict_entity = await SysDict.get(db, dict_uid)
-#         if not dict_entity:
-#             return response(code=ErrorCode.DICT_NOT_FOUND)
-
-#         dict_form = DictForm.model_validate(dict_entity)
-#         return response(result=dict_form)
-#     except Exception as e:
-#         print(e)
-#         print(traceback.format_exc())
-#         return response(code=ErrorCode.UNKNOWN_ERROR)
-
-
-@router.post("/dicts/update")
+@router.post("/update")
 async def update_dict(
-    dictForm: DictForm,
-    user: User = Depends(get_current_user),
-    dict_service: DictService = Depends(get_dict_service),
+    form: DictUpdate,
+    db: AsyncSession = Depends(deps.get_db),
+    current_user: SysUser = Depends(deps.get_current_user),
 ):
-    error_code = await dict_service.update_dict(dictForm, user.uid)
-    if error_code != ErrorCode.SUCCESS:
-        return response(code=error_code)
-    return response()
+    dict_obj = await db.get(SysDict, form.id)
+    if not dict_obj:
+        raise HTTPException(status_code=404, detail="Dict not found")
+        
+    for key, value in form.model_dump(exclude={"id"}).items():
+        setattr(dict_obj, key, value)
+        
+    await db.commit()
+    return {"code": 200, "message": "Success"}
 
-
-@router.post("/dicts/delete")
+@router.post("/delete")
 async def delete_dict(
-    delete_form: DeleteObjsForm,
-    user: User = Depends(get_current_user),
-    dict_service: DictService = Depends(get_dict_service),
+    form: DeleteObjsForm,
+    db: AsyncSession = Depends(deps.get_db),
+    current_user: SysUser = Depends(deps.get_current_user),
 ):
-    error_code = await dict_service.delete_dicts(delete_form.uid_arr, user.uid)
-    if error_code != ErrorCode.SUCCESS:
-        return response(code=error_code)
-    return response()
+    await db.execute(delete(SysDict).where(SysDict.id.in_(form.uid_arr)))
+    await db.commit()
+    return {"code": 200, "message": "Success"}

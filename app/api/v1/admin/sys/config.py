@@ -1,110 +1,135 @@
-from fastapi import APIRouter, Depends
-from app.api.deps import get_current_user
-from sqlalchemy import select
-from api.globals.error import ErrorCode
-from api.libs.decorations.permission import has_permission
-from api.schemes.admin.config import ConfigForm, ConfigInfo
-from conf.config_web import Config
-from app.api.deps import get_db as get_async_session
-from api.models.sys.sys_config import SysConfig
-from api.globals.error import ConfigErrorCode
-from api.services.admin.config_service import ConfigService, get_config_service
-from typing import List
-from api.globals.response import response
+from typing import List, Optional
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-import traceback
+from sqlalchemy import select, or_, func
+
+from app.api import deps
+from app.models.sys.config import SysConfig
+from app.models.sys.user import SysUser
+from app.schemas.sys.config import ConfigCreate, ConfigUpdate, ConfigResponse
 
 router = APIRouter()
-config = Config()
-router = APIRouter(prefix="/backend", tags=["config"])
 
-
-@router.get("/config/list")
-# @has_permission("sys:config:query")
-async def configList(
-    keywords: str = "",
-    user: SysConfig = Depends(get_current_user),
-    config_service: ConfigService = Depends(get_config_service),
+@router.get("/list", response_model=dict)
+async def get_config_list(
+    keywords: Optional[str] = None,
+    page_size: int = 10,
+    page_number: int = 1,
+    db: AsyncSession = Depends(deps.get_db),
+    current_user: SysUser = Depends(deps.get_current_user),
 ):
-    config_list, total_count, error_code = await config_service.query_confs_list(
-        keywords
-    )
-    if error_code != ConfigErrorCode.SUCCESS:
-        return response(code=error_code)
-    # 恢复原始代码，因为现在response函数会自动处理枚举类型序列化
-    config_list = [
-        ConfigInfo.model_validate(config).model_dump() for config in config_list
-    ]
-    return response(result={"list": config_list, "total": total_count})
+    stmt = select(SysConfig).where(SysConfig.is_deleted == False) if hasattr(SysConfig, 'is_deleted') else select(SysConfig)
+    
+    # Check if is_deleted exists in BaseModel or SysConfig. 
+    # BaseModel (step 21) has delete_time, not is_deleted.
+    # Usually is_deleted is a computed property or we check delete_time is None.
+    # Let's check BaseModel again.
+    # BaseModel has delete_time. So we should check delete_time is None.
+    stmt = select(SysConfig).where(SysConfig.delete_time == None)
 
+    if keywords:
+        stmt = stmt.where(
+            or_(
+                SysConfig.name.ilike(f"%{keywords}%"),
+                SysConfig.key.ilike(f"%{keywords}%")
+            )
+        )
+    
+    # Count
+    count_stmt = select(func.count()).select_from(stmt.subquery())
+    total = await db.scalar(count_stmt)
 
-@router.post("/config/update", tags=["config"])
-@has_permission("sys:config:update")
-async def update_config(
-    config_form: ConfigForm,
-    user: SysConfig = Depends(get_current_user),
-    config_service: ConfigService = Depends(get_config_service),
-):
-    error_code = await config_service.update_config(config_form, user.uid)
-    if error_code != ErrorCode.SUCCESS:
-        return response(code=error_code)
+    # Paging
+    stmt = stmt.offset((page_number - 1) * page_size).limit(page_size)
+    result = await db.execute(stmt)
+    configs = result.scalars().all()
 
-    return response()
+    return {
+        "list": [ConfigResponse.model_validate(c) for c in configs],
+        "total": total
+    }
 
-
-@router.post("/config/add")
-@has_permission("sys:config:add")
+@router.post("/add", response_model=ConfigResponse)
 async def add_config(
-    config_form: ConfigForm,
-    user: SysConfig = Depends(get_current_user),
-    config_service: ConfigService = Depends(get_config_service),
+    form: ConfigCreate,
+    db: AsyncSession = Depends(deps.get_db),
+    current_user: SysUser = Depends(deps.get_current_user),
 ):
-    error_code = await config_service.add_config(config_form, user.uid)
-    if error_code != ErrorCode.SUCCESS:
-        return response(code=error_code)
+    # Check duplicates
+    stmt = select(SysConfig).where(
+        or_(SysConfig.key == form.key, SysConfig.name == form.name),
+        SysConfig.delete_time == None
+    )
+    result = await db.execute(stmt)
+    existing = result.scalars().first()
+    if existing:
+        if existing.key == form.key:
+             raise HTTPException(status_code=400, detail="Config Key already exists")
+        if existing.name == form.name:
+             raise HTTPException(status_code=400, detail="Config Name already exists")
 
-    return response()
+    new_config = SysConfig(
+        name=form.name,
+        key=form.key,
+        value=form.value,
+        type=form.type,
+        remark=form.remark,
+        create_by=current_user.username
+    )
+    db.add(new_config)
+    await db.commit()
+    await db.refresh(new_config)
+    return new_config
 
+@router.post("/update", response_model=ConfigResponse)
+async def update_config(
+    form: ConfigUpdate,
+    db: AsyncSession = Depends(deps.get_db),
+    current_user: SysUser = Depends(deps.get_current_user),
+):
+    config = await db.get(SysConfig, form.id)
+    if not config or config.delete_time is not None:
+         raise HTTPException(status_code=404, detail="Config not found")
 
-@router.delete("/config/delete/{uid}")
-@has_permission("sys:config:delete")
+    # Check duplicates if key/name changed
+    stmt = select(SysConfig).where(
+        or_(SysConfig.key == form.key, SysConfig.name == form.name),
+        SysConfig.id != form.id,
+        SysConfig.delete_time == None
+    )
+    result = await db.execute(stmt)
+    existing = result.scalars().first()
+    if existing:
+        if existing.key == form.key:
+             raise HTTPException(status_code=400, detail="Config Key already exists")
+        if existing.name == form.name:
+             raise HTTPException(status_code=400, detail="Config Name already exists")
+
+    config.name = form.name
+    config.key = form.key
+    config.value = form.value
+    config.type = form.type
+    config.remark = form.remark
+    config.update_by = current_user.username
+    
+    await db.commit()
+    await db.refresh(config)
+    return config
+
+@router.delete("/delete/{id}", response_model=dict)
 async def delete_config(
-    uid: str,
-    user: SysConfig = Depends(get_current_user),
-    config_service: ConfigService = Depends(get_config_service),
+    id: int,
+    db: AsyncSession = Depends(deps.get_db),
+    current_user: SysUser = Depends(deps.get_current_user),
 ):
-    error_code = await config_service.delete_config(uid, user.uid)
-    if error_code != ErrorCode.SUCCESS:
-        return response(code=error_code)
+    config = await db.get(SysConfig, id)
+    if not config or config.delete_time is not None:
+        raise HTTPException(status_code=404, detail="Config not found")
 
-    return response()
-
-
-async def check_config_form(
-    config_form: ConfigForm, db: AsyncSession, id: int = -1
-) -> ErrorCode:
-    # 检查配置键是否重复
-    stmt = await db.execute(
-        select(SysConfig).where(
-            SysConfig.config_key == config_form.key,
-            SysConfig.id != config_form.id if id != -1 else True,
-            SysConfig.is_deleted == False,
-        )
-    )
-    config = stmt.scalars().first()
-    if config:
-        return ErrorCode.CONFIG_KEY_DUPLICATE
-
-    # 检查配置名称是否重复
-    stmt = await db.execute(
-        select(SysConfig).where(
-            SysConfig.config_name == config_form.config_name,
-            SysConfig.id != config_form.id if id != -1 else True,
-            SysConfig.is_deleted == False,
-        )
-    )
-    config = stmt.scalars().first()
-    if config:
-        return ErrorCode.CONFIG_NAME_DUPLICATE
-
-    return ErrorCode.SUCCESS
+    # Soft delete
+    from datetime import datetime
+    config.delete_time = datetime.now()
+    config.delete_by = current_user.username
+    
+    await db.commit()
+    return {"code": 200, "message": "Success"}

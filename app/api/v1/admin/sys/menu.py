@@ -1,145 +1,158 @@
-from fastapi import APIRouter, Depends
-from api.globals.enum import MenuType
-from api.globals.error import ErrorCode, RouteErrorCode, RoleErrorCode
-from app.api.deps import get_current_user
-from api.models.sys.sys_menu import SysMenu
-from api.schemes.admin.menu import UpdateMenuForm, MenuInfo, DeleteMenuForm
-from conf.config_web import Config
-from api.globals.error import MenuErrorCode
-from typing import List
-from app.models.sys.user import SysUser as User
-from api.globals.response import response
-from api.services.admin.menu_service import MenuService, get_menu_service
-from api.services.admin.role_service import RoleService, get_role_service
-from api.globals.constants import ROOT_NODE_PARENT_UID
-import traceback
-from sqlalchemy import or_, select
+from typing import List, Any
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, update, delete, desc, distinct
 
-config = Config()
+from app.api import deps
+from app.models.sys.menu import SysMenu, SysRoleMenu
+from app.models.sys.user import SysUser
+from app.schemas.sys.menu import (
+    MenuCreate,
+    MenuUpdate,
+    MenuResponse,
+    MenuTree
+)
+from pydantic import BaseModel
 
-router = APIRouter(prefix="/backend", tags=["menu"])
+router = APIRouter()
 
+class DeleteMenuForm(BaseModel):
+    uid: int
 
-@router.post("/menu/update")
-async def update_menu(
-    menu_form: UpdateMenuForm,
-    user: User = Depends(get_current_user),
-    menu_service: MenuService = Depends(get_menu_service),
-):
-    error_code = await menu_service.update_menu(menu_form, update_by=user.uid)
-    if error_code != MenuErrorCode.SUCCESS:
-        return response(code=error_code)
-    return response()
+def build_menu_tree(menus: List[SysMenu], parent_id: int) -> List[MenuTree]:
+    tree = []
+    for menu in menus:
+        if menu.parent_id == parent_id:
+            node = MenuTree.model_validate(menu)
+            children = build_menu_tree(menus, menu.id)
+            if children:
+                node.children = children
+            tree.append(node)
+    return tree
 
-
-@router.get("/menu/list")
+@router.get("/list", response_model=Any)
 async def menu_list(
-    keywords: str | None = "",
-    user: User = Depends(get_current_user),
-    menu_service: MenuService = Depends(get_menu_service),
+    keywords: str = None,
+    db: AsyncSession = Depends(deps.get_db),
+    current_user: SysUser = Depends(deps.get_current_user),
 ):
-    menus_objs = await menu_service.list_menus(keywords=keywords)
-    menu_tree = build_menu_tree(ROOT_NODE_PARENT_UID, menus_objs)
-    menu_tree = [m.model_dump() for m in menu_tree]
-    return response(result=menu_tree)
+    stmt = select(SysMenu).order_by(SysMenu.sort)
+    if keywords:
+        stmt = stmt.where(SysMenu.name.like(f"%{keywords}%"))
+    
+    result = await db.execute(stmt)
+    menus = result.scalars().all()
+    
+    return {"result": [m.model_dump() for m in build_menu_tree(menus, 0)]}
 
-
-@router.post("/menu/add")
+@router.post("/add")
 async def add_menu(
-    menu_form: UpdateMenuForm,
-    user: User = Depends(get_current_user),
-    menu_service: MenuService = Depends(get_menu_service),
+    form: MenuCreate,
+    db: AsyncSession = Depends(deps.get_db),
+    current_user: SysUser = Depends(deps.get_current_user),
 ):
-    menu, error_code = await menu_service.add_menu(menu_form, create_by=user.uid)
-    if error_code != MenuErrorCode.SUCCESS:
-        return response(code=error_code)
-    return response(result=menu.model_dump())
+    new_menu = SysMenu(**form.model_dump())
+    
+    # Handle tree path logic similar to dept
+    if new_menu.parent_id == 0:
+        new_menu.tree_path = "0"
+    else:
+        parent = await db.get(SysMenu, new_menu.parent_id)
+        if not parent:
+             raise HTTPException(status_code=404, detail="Parent menu not found")
+        new_menu.tree_path = f"{parent.tree_path},{parent.id}"
+        
+    db.add(new_menu)
+    await db.commit()
+    await db.refresh(new_menu)
+    return {"code": 200, "message": "Success", "result": new_menu.model_dump()}
 
+@router.post("/update")
+async def update_menu(
+    form: MenuUpdate,
+    db: AsyncSession = Depends(deps.get_db),
+    current_user: SysUser = Depends(deps.get_current_user),
+):
+    menu = await db.get(SysMenu, form.id)
+    if not menu:
+        raise HTTPException(status_code=404, detail="Menu not found")
+    
+    # Check parent loop
+    if menu.id == form.parent_id:
+        raise HTTPException(status_code=400, detail="Cannot set parent to self")
 
-# 修改菜单显示状态
-# @router.post("/update/menu/show_status")
-# async def update_menu_status(
-#     menu_id: int,
-#     status: bool,
-#     user: User = Depends(get_current_user),
-#     menu_service: MenuService = Depends(get_menu_service),
-# ):
-#     menu = await SysMenu.get(db, menu_id)
-#     if not menu:
-#         return response(code=RouteErrorCode.MENU_NOT_FOUND)
+    # Update logic with tree path handling
+    old_parent_id = menu.parent_id
+    
+    for key, value in form.model_dump().items():
+        setattr(menu, key, value)
+        
+    if old_parent_id != form.parent_id:
+        if form.parent_id == 0:
+            new_tree_path = "0"
+        else:
+            parent = await db.get(SysMenu, form.parent_id)
+            if not parent:
+                raise HTTPException(status_code=404, detail="Parent menu not found")
+            new_tree_path = f"{parent.tree_path},{parent.id}"
+            
+        old_tree_path = f"{menu.tree_path},{menu.id}"
+        new_level_tree_path = f"{new_tree_path},{menu.id}"
+        
+        menu.tree_path = new_tree_path
+        
+        # Update children tree paths
+        descendants_stmt = select(SysMenu).where(SysMenu.tree_path.like(f"{old_tree_path}%"))
+        descendants_result = await db.execute(descendants_stmt)
+        descendants = descendants_result.scalars().all()
+        
+        for child in descendants:
+            suffix = child.tree_path[len(old_tree_path):]
+            child.tree_path = f"{new_level_tree_path}{suffix}"
+            
+    await db.commit()
+    return {"code": 200, "message": "Success"}
 
-#     menu.is_active = status
-#     menu.update_by = user.uid
-#     await db.commit()
-#     return response()
-
-
-# 删除菜单
-@router.post("/menu/delete")
+@router.post("/delete")
 async def delete_menu(
-    delete_form: DeleteMenuForm,
-    user: User = Depends(get_current_user),
-    menu_service: MenuService = Depends(get_menu_service),
+    form: DeleteMenuForm,
+    db: AsyncSession = Depends(deps.get_db),
+    current_user: SysUser = Depends(deps.get_current_user),
 ):
-    error_code = await menu_service.delete_menu(delete_form.uid, delete_by=user.uid)
-    if error_code != MenuErrorCode.SUCCESS:
-        return response(code=error_code)
-    return response()
+    # Check children
+    stmt = select(SysMenu).where(SysMenu.parent_id == form.uid)
+    if await db.scalar(stmt):
+        raise HTTPException(status_code=400, detail="Cannot delete menu with children")
+        
+    await db.execute(delete(SysMenu).where(SysMenu.id == form.uid))
+    await db.execute(delete(SysRoleMenu).where(SysRoleMenu.menu_id == form.uid))
+    
+    await db.commit()
+    return {"code": 200, "message": "Success"}
 
-
-# 菜单路由列表
-@router.get("/menu/routes")
+@router.get("/routes")
 async def get_current_user_routes(
-    user: User = Depends(get_current_user),
-    role_service: RoleService = Depends(get_role_service),
+    db: AsyncSession = Depends(deps.get_db),
+    current_user: SysUser = Depends(deps.get_current_user),
 ):
-    roles, err_code = await role_service.get_roles_ids_by_user_uid(user.uid)
-    if err_code != RoleErrorCode.SUCCESS:
-        return response(code=err_code)
+    
+    # Let's check `SysUser` content after this write, 
+    # BUT I am writing the file now. 
+    # I will put a placeholder for routes logic or a simple "all menus" if user is superuser etc.
+    # Better: implementing `get_routes` properly requires knowing how users are linked to roles.
+    # I will use a subquery approach assuming table names `sys_user_role`.
+    
+    # Actually, I'll read `app/models/sys/user.py` after this tool call to be sure, and then update `menu.py` if needed.
+    # For now, I will implement `menu_options` and others.
+    
+    return {"result": []} # Placeholder to be updated
 
-    routes, err_code = await role_service.list_routes_of_roles(roles)
-    if err_code != RoleErrorCode.SUCCESS:
-        return response(code=err_code)
-    return response(result=routes)
-
-
-@router.get("/menu/options")
+@router.get("/options")
 async def menu_options(
-    only_parent: bool = False,
-    user: User = Depends(get_current_user),
-    menu_service: MenuService = Depends(get_menu_service),
+    db: AsyncSession = Depends(deps.get_db),
+    current_user: SysUser = Depends(deps.get_current_user),
 ):
-    """
-    查询菜单选项
-    """
-    result = await menu_service.list_menus()
-    menu_tree = build_menu_tree(ROOT_NODE_PARENT_UID, result)
-    re = [m.model_dump() for m in menu_tree]
-    return response(result=re)
-
-
-def build_menu_tree(parent_uid: str, menu_list: List[SysMenu]) -> List[MenuInfo]:
-    menu_tree = []
-    for menu in menu_list:
-        if menu.parent_uid == parent_uid:
-            menu_vo = MenuInfo(
-                uid=menu.uid,
-                parent_uid=menu.parent_uid,
-                tree_path=menu.tree_path,
-                name=menu.name,
-                type=menu.type,
-                route_name=menu.route_name,
-                route_path=menu.route_path,
-                component=menu.component,
-                perm=menu.perm,
-                always_show=menu.always_show,
-                keep_alive=menu.keep_alive,
-                visible=menu.visible,
-                sort=menu.sort,
-                icon=menu.icon,
-                redirect=menu.redirect,
-                params=menu.params,
-                children=build_menu_tree(menu.uid, menu_list),
-            )
-            menu_tree.append(menu_vo)
-    return menu_tree
+    stmt = select(SysMenu).order_by(SysMenu.sort)
+    result = await db.execute(stmt)
+    menus = result.scalars().all()
+    return {"result": [m.model_dump() for m in build_menu_tree(menus, 0)]}

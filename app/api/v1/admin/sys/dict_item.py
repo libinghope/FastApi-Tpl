@@ -1,71 +1,59 @@
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.future import select
-from api.globals.error import ErrorCode, DictErrorCode
-from app.api.deps import get_current_user
-from app.models.sys.user import SysUser as User
-from api.schemes.admin.dict_item import DictItemForm, DictItemInfo
-from conf.config_web import Config
-from app.api.deps import get_db as get_async_session
-from api.globals.response import response
+from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
-from api.services.admin.dict_item_service import (
-    DictItemService,
-    get_dict_item_service,
-)
-from api.schemes.base import DeleteObjsForm
-import traceback
 
-config = Config()
-router = APIRouter(prefix="/backend", tags=["dict-item"])
+from app.api import deps
+from app.models.sys.user import SysUser
+from app.models.sys.dictionary import SysDictItem
+from app.schemas.sys.dict import DictItemCreate, DictItemUpdate, DictItemResponse, DeleteObjsForm
 
+router = APIRouter()
 
-# 根据字典code获取所有字典项
-@router.get("/dict/items/{dict_code}/list")
+@router.get("/items/{dict_code}/list", response_model=List[DictItemResponse])
 async def get_dict_items(
-    dict_code: str, dict_item_service: DictItemService = Depends(get_dict_item_service)
+    dict_code: str,
+    db: AsyncSession = Depends(deps.get_db),
 ):
+    stmt = select(SysDictItem).where(SysDictItem.dict_code == dict_code).order_by(SysDictItem.sort)
+    result = await db.execute(stmt)
+    items = result.scalars().all()
+    return [DictItemResponse.model_validate(item) for item in items]
 
-    dict_items, error_code = await dict_item_service.get_dict_items_by_code(dict_code)
-    if error_code != ErrorCode.SUCCESS:
-        return response(code=error_code)
-    dict_items_list = [DictItemInfo.model_validate(d).model_dump() for d in dict_items]
-    return response(result=dict_items_list)
-
-
-@router.post("/dict/items/add")
-async def add_dict(
-    dictForm: DictItemForm,
-    user: User = Depends(get_current_user),
-    dict_item_service: DictItemService = Depends(get_dict_item_service),
+@router.post("/items/add")
+async def add_dict_item(
+    form: DictItemCreate,
+    db: AsyncSession = Depends(deps.get_db),
+    current_user: SysUser = Depends(deps.get_current_user),
 ):
-    error_code = await dict_item_service.add_dict_item(dictForm, create_by=user.uid)
-    if error_code != ErrorCode.SUCCESS:
-        return response(code=error_code)
-    return response()
+    new_item = SysDictItem(**form.model_dump())
+    db.add(new_item)
+    await db.commit()
+    return {"code": 200, "message": "Success"}
 
-
-@router.post("/dict/items/update")
-async def update_dict(
-    dictForm: DictItemForm,
-    user: User = Depends(get_current_user),
-    dict_item_service: DictItemService = Depends(get_dict_item_service),
+@router.post("/items/update")
+async def update_dict_item(
+    form: DictItemUpdate,
+    db: AsyncSession = Depends(deps.get_db),
+    current_user: SysUser = Depends(deps.get_current_user),
 ):
-    error_code = await dict_item_service.update_dict_item(dictForm, update_by=user.uid)
-    if error_code != ErrorCode.SUCCESS:
-        return response(code=error_code)
-    return response()
+    item = await db.get(SysDictItem, form.id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Dict item not found")
+        
+    for key, value in form.model_dump(exclude={"id"}).items():
+        setattr(item, key, value)
+        
+    await db.commit()
+    return {"code": 200, "message": "Success"}
 
-
-@router.post("/dict/items/delete")
-async def delete_dict(
-    delete_form: DeleteObjsForm,
-    user: User = Depends(get_current_user),
-    dict_item_service: DictItemService = Depends(get_dict_item_service),
+@router.post("/items/delete")
+async def delete_dict_item(
+    form: DeleteObjsForm,
+    db: AsyncSession = Depends(deps.get_db),
+    current_user: SysUser = Depends(deps.get_current_user),
 ):
-    error_code = await dict_item_service.delete_dict_items(
-        delete_form.uid_arr, delete_by=user.uid
-    )
-    if error_code != ErrorCode.SUCCESS:
-        return response(code=error_code)
-    return response()
+    await db.execute(delete(SysDictItem).where(SysDictItem.id.in_(form.uid_arr)))
+    await db.commit()
+    return {"code": 200, "message": "Success"}
