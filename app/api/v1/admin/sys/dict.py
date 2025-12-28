@@ -8,10 +8,11 @@ from app.api import deps
 from app.models.sys.user import SysUser
 from app.models.sys.dictionary import SysDict
 from app.schemas.sys.dict import DictCreate, DictUpdate, DictResponse, DeleteObjsForm
-from app.schemas.response import response
+from app.schemas.response import ResponseSchema, PageSchema, response
 from app.core.codes import ErrorCode
 
 router = APIRouter()
+
 
 @router.get("/list", response_model=ResponseSchema[PageSchema[DictResponse]])
 async def list_dicts(
@@ -29,17 +30,26 @@ async def list_dicts(
                 SysDict.name.ilike(f"%{keywords}%"),
             )
         )
-    
+
     # Count
     count_stmt = select(func.count()).select_from(stmt.subquery())
     total = await db.scalar(count_stmt)
-    
+
     # Paging
-    stmt = stmt.offset((page_number - 1) * page_size).limit(page_size).order_by(SysDict.sort)
+    stmt = (
+        stmt.offset((page_number - 1) * page_size)
+        .limit(page_size)
+        .order_by(SysDict.sort)
+    )
     result = await db.execute(stmt)
     dicts = result.scalars().all()
-    
-    return response(data=PageSchema(list=[DictResponse.model_validate(d) for d in dicts], total=total))
+
+    return response(
+        data=PageSchema(
+            list=[DictResponse.model_validate(d) for d in dicts], total=total
+        )
+    )
+
 
 @router.post("/add", response_model=ResponseSchema)
 async def add_dict(
@@ -49,12 +59,15 @@ async def add_dict(
 ):
     stmt = select(SysDict).where(SysDict.code == form.code)
     if await db.scalar(stmt):
-        return response(code=ErrorCode.DICT_ALREADY_EXISTS, message="Dict code already exists")
-        
+        return response(
+            code=ErrorCode.DICT_ALREADY_EXISTS, message="Dict code already exists"
+        )
+
     new_dict = SysDict(**form.model_dump())
     db.add(new_dict)
     await db.commit()
     return response(message="Success")
+
 
 @router.post("/update", response_model=ResponseSchema)
 async def update_dict(
@@ -65,12 +78,13 @@ async def update_dict(
     dict_obj = await db.get(SysDict, form.id)
     if not dict_obj:
         return response(code=ErrorCode.DICT_NOT_FOUND, message="Dict not found")
-        
+
     for key, value in form.model_dump(exclude={"id"}).items():
         setattr(dict_obj, key, value)
-        
+
     await db.commit()
     return response(message="Success")
+
 
 @router.post("/delete", response_model=ResponseSchema)
 async def delete_dict(
