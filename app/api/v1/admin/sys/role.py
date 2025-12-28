@@ -1,7 +1,7 @@
 from typing import List, Any
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, insert, update, delete, desc
+from sqlalchemy import select, insert, update, delete, desc, func
 
 from app.api import deps
 from app.models.sys.role import SysRole
@@ -14,6 +14,7 @@ from app.schemas.sys.role import (
     RoleResponse,
     DeleteObjsForm
 )
+from app.schemas.response import ResponseSchema, PageSchema
 from pydantic import BaseModel
 
 router = APIRouter()
@@ -21,7 +22,7 @@ router = APIRouter()
 class RoleAssignPermsForm(BaseModel):
     menu_ids: List[int]
 
-@router.get("/list", response_model=Any)
+@router.get("/list", response_model=ResponseSchema[PageSchema[RoleResponse]])
 async def role_list(
     page: int = 1,
     size: int = 20,
@@ -36,41 +37,21 @@ async def role_list(
     if status is not None:
         stmt = stmt.where(SysRole.status == status)
     
-    # Calculate total and pagination
-    # This is a bit inefficient for huge tables, but standard for these admin apps
-    # For better pagination, we should use a separate count query or pagination library
-    # For now, let's keep it simple or stick to what other endpoints do. 
-    # The original role.py didn't show implementation of get_role_list service, but it likely did pagination.
-    
-    # Let's do a simple list return for now or implement manual pagination
-    # To match standard response format often used: {list: [], total: N}
-    
     # Count query
-    # count_stmt = select(func.count()).select_from(stmt.subquery()) # simplify
-    # For now let's just fetch all and slice in python if no easy pagination util is there, 
-    # OR better: implement proper limit/offset
+    count_stmt = select(func.count()).select_from(stmt.subquery())
+    total = await db.scalar(count_stmt) or 0
     
-    # Create a count query by removing order_by and replacing select
-    # This is tricky with raw sqlalchemy select objects.
-    
-    # Let's just do two queries.
-    # We can't easily clone the stmt for count without subquery in 1.4/2.0 sometimes
-    
-    # Standard approach:
+    # Pagination
+    stmt = stmt.offset((page - 1) * size).limit(size)
     result = await db.execute(stmt)
-    all_roles = result.scalars().all()
-    total = len(all_roles)
+    roles = result.scalars().all()
     
-    start = (page - 1) * size
-    end = start + size
-    roles = all_roles[start:end]
-    
-    return {
-        "list": [RoleResponse.model_validate(r).model_dump() for r in roles],
-        "total": total
-    }
+    return ResponseSchema(data=PageSchema(
+        list=[RoleResponse.model_validate(r).model_dump() for r in roles],
+        total=total
+    ))
 
-@router.get("/options")
+@router.get("/options", response_model=ResponseSchema)
 async def role_options(
     db: AsyncSession = Depends(deps.get_db),
     current_user: SysUser = Depends(deps.get_current_user),
@@ -78,9 +59,9 @@ async def role_options(
     stmt = select(SysRole).where(SysRole.status == 1).order_by(SysRole.sort)
     result = await db.execute(stmt)
     roles = result.scalars().all()
-    return {"result": [RoleResponse.model_validate(r).model_dump() for r in roles]}
+    return ResponseSchema(data={"result": [RoleResponse.model_validate(r).model_dump() for r in roles]})
 
-@router.post("/add")
+@router.post("/add", response_model=ResponseSchema)
 async def add_role(
     form: RoleCreate,
     db: AsyncSession = Depends(deps.get_db),
@@ -95,9 +76,9 @@ async def add_role(
     db.add(new_role)
     await db.commit()
     await db.refresh(new_role)
-    return {"code": 200, "message": "Success", "result": {"role_id": new_role.id}}
+    return ResponseSchema(message="Success", data={"result": {"role_id": new_role.id}})
 
-@router.post("/update")
+@router.post("/update", response_model=ResponseSchema)
 async def update_role(
     form: RoleUpdate,
     db: AsyncSession = Depends(deps.get_db),
@@ -117,9 +98,9 @@ async def update_role(
         
     role.update_by = current_user.username
     await db.commit()
-    return {"code": 200, "message": "Success"}
+    return ResponseSchema(message="Success")
 
-@router.post("/delete")
+@router.post("/delete", response_model=ResponseSchema)
 async def delete_roles(
     form: DeleteObjsForm,
     db: AsyncSession = Depends(deps.get_db),
@@ -133,9 +114,9 @@ async def delete_roles(
     await db.execute(delete(SysRoleMenu).where(SysRoleMenu.role_id.in_(form.ids)))
     
     await db.commit()
-    return {"code": 200, "message": "Success"}
+    return ResponseSchema(message="Success")
 
-@router.get("/{role_id}/menu_ids")
+@router.get("/{role_id}/menu_ids", response_model=ResponseSchema)
 async def get_role_menu_ids(
     role_id: int,
     db: AsyncSession = Depends(deps.get_db),
@@ -144,9 +125,9 @@ async def get_role_menu_ids(
     stmt = select(SysRoleMenu.menu_id).where(SysRoleMenu.role_id == role_id)
     result = await db.execute(stmt)
     menu_ids = result.scalars().all()
-    return {"result": menu_ids}
+    return ResponseSchema(data={"result": menu_ids})
 
-@router.post("/{role_id}/assign_perms")
+@router.post("/{role_id}/assign_perms", response_model=ResponseSchema)
 async def assign_perms(
     role_id: int,
     form: RoleAssignPermsForm,
@@ -167,9 +148,9 @@ async def assign_perms(
         await db.execute(insert(SysRoleMenu), values)
         
     await db.commit()
-    return {"code": 200, "message": "Success"}
+    return ResponseSchema(message="Success")
 
-@router.post("/{role_id}/update_status")
+@router.post("/{role_id}/update_status", response_model=ResponseSchema)
 async def update_role_status(
     role_id: int,
     status: bool = Query(..., description="Status (true: Normal, false: Disabled)"),
@@ -183,4 +164,4 @@ async def update_role_status(
     role.status = 1 if status else 0
     role.update_by = current_user.username
     await db.commit()
-    return {"code": 200, "message": "Success"}
+    return ResponseSchema(message="Success")

@@ -12,7 +12,7 @@ import pytest
 from unittest.mock import MagicMock, AsyncMock  # 导入mock工具，用于模拟数据库和依赖
 from app.main import app  # 导入FastAPI应用实例
 from app.api import deps  # 导入依赖项模块
-from app.models.sys.user import SysUser  # 导入用户数据模型
+from app.models.sys.user import SysUser, SysUserRoleRef  # 导入用户数据模型
 
 
 # 定义模拟管理员用户，用于测试需要认证的接口
@@ -136,8 +136,14 @@ async def test_get_users_list(client, override_deps, mock_db_session):
             m.all.return_value = [(u,) for u in user_list]
             return m
         elif "user_role_ref" in str_stmt:
-            # 处理角色关联查询，返回模拟的角色ID
-            m.scalars.return_value.all.return_value = [1]
+            # Return SysUserRoleRef objects
+            # Assuming query is for user ids in list.
+            # We mock returning one role for user1 (id=1) 
+            # We need to return objects with user_id and role_id
+            m1 = SysUserRoleRef(user_id=1, role_id=1)
+            # maybe for user2 too?
+            m2 = SysUserRoleRef(user_id=2, role_id=1)
+            m.scalars.return_value.all.return_value = [m1, m2]
             return m
 
         # 默认返回空结果
@@ -154,9 +160,9 @@ async def test_get_users_list(client, override_deps, mock_db_session):
     # 验证响应结果
     assert response.status_code == 200  # 验证HTTP状态码为200
     data = response.json()  # 解析JSON响应
-    assert data["total"] == 2  # 验证用户总数为2
-    assert len(data["list"]) == 2  # 验证返回的用户列表长度为2
-    assert data["list"][0]["username"] == "user1"  # 验证第一个用户的用户名
+    assert data["data"]["total"] == 2  # 验证用户总数为2
+    assert len(data["data"]["list"]) == 2  # 验证返回的用户列表长度为2
+    assert data["data"]["list"][0]["username"] == "user1"  # 验证第一个用户的用户名
 
 
 @pytest.mark.anyio

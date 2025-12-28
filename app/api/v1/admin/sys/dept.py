@@ -13,10 +13,11 @@ from app.schemas.sys.dept import (
     DeptTree,
     DeleteObjsForm
 )
+from app.schemas.response import ResponseSchema
 
 router = APIRouter()
 
-@router.get("/tree", response_model=List[DeptTree])
+@router.get("/tree", response_model=ResponseSchema[List[DeptTree]])
 async def get_dept_tree(
     name: Optional[str] = None,
     status: Optional[int] = None,
@@ -36,9 +37,9 @@ async def get_dept_tree(
     depts = result.scalars().all()
     
     # Build tree
-    return build_dept_tree(depts, 0)
+    return ResponseSchema(data=build_dept_tree(depts, 0))
 
-@router.get("/options")
+@router.get("/options", response_model=ResponseSchema)
 async def get_dept_options(
     db: AsyncSession = Depends(deps.get_db),
     current_user: SysUser = Depends(deps.get_current_user),
@@ -51,9 +52,9 @@ async def get_dept_options(
     depts = result.scalars().all()
     
     tree = build_dept_tree(depts, 0)
-    return {"result": [dept.model_dump() for dept in tree]}
+    return ResponseSchema(data={"result": [dept.model_dump() for dept in tree]})
 
-@router.post("/add")
+@router.post("/add", response_model=ResponseSchema)
 async def add_dept(
     form: DeptCreate,
     db: AsyncSession = Depends(deps.get_db),
@@ -86,9 +87,9 @@ async def add_dept(
 
     db.add(new_dept)
     await db.commit()
-    return {"code": 200, "message": "Success"}
+    return ResponseSchema(message="Success")
 
-@router.put("/update")
+@router.put("/update", response_model=ResponseSchema)
 async def update_dept(
     form: DeptUpdate,
     db: AsyncSession = Depends(deps.get_db),
@@ -164,9 +165,9 @@ async def update_dept(
             child.tree_path = f"{new_level_tree_path}{suffix}"
             
     await db.commit()
-    return {"code": 200, "message": "Success"}
+    return ResponseSchema(message="Success")
 
-@router.post("/delete")
+@router.post("/delete", response_model=ResponseSchema)
 async def delete_dept(
     form: DeleteObjsForm,
     db: AsyncSession = Depends(deps.get_db),
@@ -187,7 +188,7 @@ async def delete_dept(
 
     await db.execute(delete(SysDept).where(SysDept.id.in_(form.ids)))
     await db.commit()
-    return {"code": 200, "message": "Success"}
+    return ResponseSchema(message="Success")
 
 
 def build_dept_tree(depts: List[SysDept], parent_id: int) -> List[DeptTree]:

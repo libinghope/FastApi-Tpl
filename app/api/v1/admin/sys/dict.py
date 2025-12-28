@@ -8,10 +8,11 @@ from app.api import deps
 from app.models.sys.user import SysUser
 from app.models.sys.dictionary import SysDict
 from app.schemas.sys.dict import DictCreate, DictUpdate, DictResponse, DeleteObjsForm
+from app.schemas.response import ResponseSchema, PageSchema
 
 router = APIRouter()
 
-@router.get("/list", response_model=dict)
+@router.get("/list", response_model=ResponseSchema[PageSchema[DictResponse]])
 async def list_dicts(
     keywords: Optional[str] = None,
     page_size: int = 10,
@@ -37,9 +38,9 @@ async def list_dicts(
     result = await db.execute(stmt)
     dicts = result.scalars().all()
     
-    return {"list": [DictResponse.model_validate(d) for d in dicts], "total": total}
+    return ResponseSchema(data=PageSchema(list=[DictResponse.model_validate(d) for d in dicts], total=total))
 
-@router.post("/add")
+@router.post("/add", response_model=ResponseSchema)
 async def add_dict(
     form: DictCreate,
     db: AsyncSession = Depends(deps.get_db),
@@ -52,9 +53,9 @@ async def add_dict(
     new_dict = SysDict(**form.model_dump())
     db.add(new_dict)
     await db.commit()
-    return {"code": 200, "message": "Success"}
+    return ResponseSchema(message="Success")
 
-@router.post("/update")
+@router.post("/update", response_model=ResponseSchema)
 async def update_dict(
     form: DictUpdate,
     db: AsyncSession = Depends(deps.get_db),
@@ -68,9 +69,9 @@ async def update_dict(
         setattr(dict_obj, key, value)
         
     await db.commit()
-    return {"code": 200, "message": "Success"}
+    return ResponseSchema(message="Success")
 
-@router.post("/delete")
+@router.post("/delete", response_model=ResponseSchema)
 async def delete_dict(
     form: DeleteObjsForm,
     db: AsyncSession = Depends(deps.get_db),
@@ -78,4 +79,4 @@ async def delete_dict(
 ):
     await db.execute(delete(SysDict).where(SysDict.id.in_(form.uid_arr)))
     await db.commit()
-    return {"code": 200, "message": "Success"}
+    return ResponseSchema(message="Success")

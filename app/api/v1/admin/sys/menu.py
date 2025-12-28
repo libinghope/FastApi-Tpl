@@ -5,13 +5,15 @@ from sqlalchemy import select, update, delete, desc, distinct
 
 from app.api import deps
 from app.models.sys.menu import SysMenu, SysRoleMenu
-from app.models.sys.user import SysUser
+from app.models.sys.user import SysUser, SysUserRoleRef
 from app.schemas.sys.menu import (
     MenuCreate,
     MenuUpdate,
     MenuResponse,
     MenuTree
 )
+from app.schemas.response import ResponseSchema
+
 from pydantic import BaseModel
 
 router = APIRouter()
@@ -30,7 +32,7 @@ def build_menu_tree(menus: List[SysMenu], parent_id: int) -> List[MenuTree]:
             tree.append(node)
     return tree
 
-@router.get("/list", response_model=Any)
+@router.get("/list", response_model=ResponseSchema)
 async def menu_list(
     keywords: str = None,
     db: AsyncSession = Depends(deps.get_db),
@@ -43,9 +45,9 @@ async def menu_list(
     result = await db.execute(stmt)
     menus = result.scalars().all()
     
-    return {"result": [m.model_dump() for m in build_menu_tree(menus, 0)]}
+    return ResponseSchema(message="Success", data={"result": [m.model_dump() for m in build_menu_tree(menus, 0)]})
 
-@router.post("/add")
+@router.post("/add", response_model=ResponseSchema)
 async def add_menu(
     form: MenuCreate,
     db: AsyncSession = Depends(deps.get_db),
@@ -65,9 +67,9 @@ async def add_menu(
     db.add(new_menu)
     await db.commit()
     await db.refresh(new_menu)
-    return {"code": 200, "message": "Success", "result": new_menu.model_dump()}
+    return ResponseSchema(message="Success", data={"result": MenuResponse.model_validate(new_menu).model_dump()})
 
-@router.post("/update")
+@router.post("/update", response_model=ResponseSchema)
 async def update_menu(
     form: MenuUpdate,
     db: AsyncSession = Depends(deps.get_db),
@@ -83,6 +85,7 @@ async def update_menu(
 
     # Update logic with tree path handling
     old_parent_id = menu.parent_id
+    old_tree_path = menu.tree_path
     
     for key, value in form.model_dump().items():
         setattr(menu, key, value)
@@ -96,24 +99,36 @@ async def update_menu(
                 raise HTTPException(status_code=404, detail="Parent menu not found")
             new_tree_path = f"{parent.tree_path},{parent.id}"
             
-        old_tree_path = f"{menu.tree_path},{menu.id}"
-        new_level_tree_path = f"{new_tree_path},{menu.id}"
-        
         menu.tree_path = new_tree_path
         
         # Update children tree paths
-        descendants_stmt = select(SysMenu).where(SysMenu.tree_path.like(f"{old_tree_path}%"))
+        # We need to match precise children constraints to avoid updating unrelated paths
+        # Old tree path: "0,1" -> Children start with "0,1,"
+        search_path = f"{old_tree_path},{menu.id}"
+        
+        descendants_stmt = select(SysMenu).where(SysMenu.tree_path.like(f"{search_path}%"))
         descendants_result = await db.execute(descendants_stmt)
         descendants = descendants_result.scalars().all()
         
+        new_level_tree_path = f"{new_tree_path},{menu.id}"
+        
         for child in descendants:
-            suffix = child.tree_path[len(old_tree_path):]
+            # suffix includes the comma separator usually if we slice correctly
+            # child.tree_path = "0,1,5" -> suffix (len("0,1")) -> ",5"
+            suffix = child.tree_path[len(search_path):] 
+            # new path = "0,2,5" (if moved to 2) -> "0,2" + ",5" -> wait.
+            # search_path included menu.id. 
+            # "0,1,5" (menu is 5). Child is 6 ("0,1,5,6").
+            # search_path "0,1,5". len=5.
+            # child path "0,1,5,6". suffix ",6".
+            # new_level_tree_path "0,2,5". 
+            # child new path "0,2,5,6".
             child.tree_path = f"{new_level_tree_path}{suffix}"
             
     await db.commit()
-    return {"code": 200, "message": "Success"}
+    return ResponseSchema(message="Success")
 
-@router.post("/delete")
+@router.post("/delete", response_model=ResponseSchema)
 async def delete_menu(
     form: DeleteMenuForm,
     db: AsyncSession = Depends(deps.get_db),
@@ -128,26 +143,64 @@ async def delete_menu(
     await db.execute(delete(SysRoleMenu).where(SysRoleMenu.menu_id == form.uid))
     
     await db.commit()
-    return {"code": 200, "message": "Success"}
+    return ResponseSchema(message="Success")
 
-@router.get("/routes")
+def build_route_tree(menus: List[SysMenu], parent_id: int) -> List[dict]:
+    tree = []
+    for menu in menus:
+        if menu.parent_id == parent_id:
+            route = {
+                "name": menu.route_name,
+                "path": menu.route_path,
+                "component": menu.component,
+                "meta": {
+                    "title": menu.name,
+                    "icon": menu.icon,
+                    "hidden": not menu.visible,
+                    "keepAlive": True if menu.keep_alive == 1 else False,
+                    "alwaysShow": True if menu.always_show == 1 else False,
+                }
+            }
+            if menu.type == 1: # Catalog
+                 route["redirect"] = menu.redirect
+            
+            children = build_route_tree(menus, menu.id)
+            if children:
+                route["children"] = children
+            
+            tree.append(route)
+    return tree
+
+@router.get("/routes", response_model=ResponseSchema)
 async def get_current_user_routes(
     db: AsyncSession = Depends(deps.get_db),
     current_user: SysUser = Depends(deps.get_current_user),
 ):
+    """
+    Get routes for current user
+    """
+    if current_user.is_superuser:
+        stmt = select(SysMenu).order_by(SysMenu.sort)
+    else:
+        # Check user roles
+        # SysUserRoleRef: user_id, role_id
+        # SysRoleMenu: role_id, menu_id
+        # We need menus where id in (select menu_id from role_menu where role_id in (select role_id from user_role where user_id = current_user.id))
+        
+        # Subquery for role ids
+        sub_roles = select(SysUserRoleRef.role_id).where(SysUserRoleRef.user_id == current_user.id)
+        
+        # Subquery for menu ids
+        sub_menus = select(SysRoleMenu.menu_id).where(SysRoleMenu.role_id.in_(sub_roles))
+        
+        stmt = select(SysMenu).where(SysMenu.id.in_(sub_menus)).order_by(SysMenu.sort)
+        
+    result = await db.execute(stmt)
+    menus = result.scalars().all()
     
-    # Let's check `SysUser` content after this write, 
-    # BUT I am writing the file now. 
-    # I will put a placeholder for routes logic or a simple "all menus" if user is superuser etc.
-    # Better: implementing `get_routes` properly requires knowing how users are linked to roles.
-    # I will use a subquery approach assuming table names `sys_user_role`.
-    
-    # Actually, I'll read `app/models/sys/user.py` after this tool call to be sure, and then update `menu.py` if needed.
-    # For now, I will implement `menu_options` and others.
-    
-    return {"result": []} # Placeholder to be updated
+    return ResponseSchema(message="Success", data={"result": build_route_tree(menus, 0)})
 
-@router.get("/options")
+@router.get("/options", response_model=ResponseSchema)
 async def menu_options(
     db: AsyncSession = Depends(deps.get_db),
     current_user: SysUser = Depends(deps.get_current_user),
@@ -155,4 +208,4 @@ async def menu_options(
     stmt = select(SysMenu).order_by(SysMenu.sort)
     result = await db.execute(stmt)
     menus = result.scalars().all()
-    return {"result": [m.model_dump() for m in build_menu_tree(menus, 0)]}
+    return ResponseSchema(message="Success", data={"result": [m.model_dump() for m in build_menu_tree(menus, 0)]})

@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Column, Integer, SmallInteger, String
+from sqlalchemy import Boolean, Column, Integer, SmallInteger, String, UniqueConstraint
 from app.models.base import BaseModel
 
 class SysMenu(BaseModel):
@@ -30,5 +30,7 @@ class SysRoleMenu(BaseModel):
 
     __tablename__ = "sys_role_menu"
 
-    role_id: int = Column(Integer, primary_key=True)
-    menu_id: int = Column(Integer, primary_key=True)
+    role_id: int = Column(Integer, nullable=False)
+    menu_id: int = Column(Integer, nullable=False)
+
+    __table_args__ = (UniqueConstraint("role_id", "menu_id"),)

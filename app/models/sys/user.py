@@ -1,4 +1,4 @@
-from sqlalchemy import Column, SmallInteger, String, Boolean, Integer
+from sqlalchemy import Column, SmallInteger, String, Boolean, Integer, UniqueConstraint
 from typing import ClassVar, List
 from app.models.base import BaseModel
 
@@ -31,11 +31,13 @@ class SysUserRoleRef(BaseModel):
 
     user_id: int = Column(
         Integer,
-        primary_key=True,
+        nullable=False,
         comment="uid",
     )
     role_id: int = Column(
         Integer,
-        primary_key=True,
+        nullable=False,
         comment="uid",
     )
+
+    __table_args__ = (UniqueConstraint("user_id", "role_id"),)

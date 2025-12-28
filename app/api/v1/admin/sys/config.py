@@ -7,10 +7,11 @@ from app.api import deps
 from app.models.sys.config import SysConfig
 from app.models.sys.user import SysUser
 from app.schemas.sys.config import ConfigCreate, ConfigUpdate, ConfigResponse
+from app.schemas.response import ResponseSchema, PageSchema
 
 router = APIRouter()
 
-@router.get("/list", response_model=dict)
+@router.get("/list", response_model=ResponseSchema[PageSchema[ConfigResponse]])
 async def get_config_list(
     keywords: Optional[str] = None,
     page_size: int = 10,
@@ -44,12 +45,12 @@ async def get_config_list(
     result = await db.execute(stmt)
     configs = result.scalars().all()
 
-    return {
-        "list": [ConfigResponse.model_validate(c) for c in configs],
-        "total": total
-    }
+    return ResponseSchema(data=PageSchema(
+        list=[ConfigResponse.model_validate(c) for c in configs],
+        total=total
+    ))
 
-@router.post("/add", response_model=ConfigResponse)
+@router.post("/add", response_model=ResponseSchema[ConfigResponse])
 async def add_config(
     form: ConfigCreate,
     db: AsyncSession = Depends(deps.get_db),
@@ -79,9 +80,9 @@ async def add_config(
     db.add(new_config)
     await db.commit()
     await db.refresh(new_config)
-    return new_config
+    return ResponseSchema(data=new_config)
 
-@router.post("/update", response_model=ConfigResponse)
+@router.post("/update", response_model=ResponseSchema[ConfigResponse])
 async def update_config(
     form: ConfigUpdate,
     db: AsyncSession = Depends(deps.get_db),
@@ -114,9 +115,9 @@ async def update_config(
     
     await db.commit()
     await db.refresh(config)
-    return config
+    return ResponseSchema(data=config)
 
-@router.delete("/delete/{id}", response_model=dict)
+@router.delete("/delete/{id}", response_model=ResponseSchema)
 async def delete_config(
     id: int,
     db: AsyncSession = Depends(deps.get_db),
@@ -132,4 +133,4 @@ async def delete_config(
     config.delete_by = current_user.username
     
     await db.commit()
-    return {"code": 200, "message": "Success"}
+    return ResponseSchema(message="Success")

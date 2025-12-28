@@ -23,10 +23,11 @@ from app.schemas.sys.user import (
     BindPhoneForm,
     BindEmailForm,
 )
+from app.schemas.response import ResponseSchema, PageSchema
 
 router = APIRouter()
 
-@router.get("/me", response_model=UserResponse)
+@router.get("/me", response_model=ResponseSchema[UserResponse])
 async def get_user_me(
     user: SysUser = Depends(deps.get_current_user),
     db: AsyncSession = Depends(deps.get_db),
@@ -42,9 +43,9 @@ async def get_user_me(
     # Create response
     user_resp = UserResponse.model_validate(user)
     user_resp.role_ids = list(role_ids)
-    return user_resp
+    return ResponseSchema(data=user_resp)
 
-@router.get("/list")
+@router.get("/list", response_model=ResponseSchema[PageSchema[UserResponse]])
 async def list_users(
     keywords: Optional[str] = None,
     status: Optional[int] = None,
@@ -87,6 +88,7 @@ async def list_users(
     total = await db.scalar(count_stmt)
     
     # Paging
+    # Paging
     stmt = stmt.offset((page_number - 1) * page_size).limit(page_size)
     result = await db.execute(stmt)
     
@@ -95,25 +97,35 @@ async def list_users(
     # original returned: {"list": user_list, "total": total_count}
     # UserInfo had dept_info.
     
+    users_with_dept = result.all() # list of (SysUser, dept_name) or just (SysUser,) if outer join selected specific cols
+    
+    # Collect user IDs
+    user_ids = [row[0].id for row in users_with_dept if row[0]]
+    
+    # Fetch roles for all users in one query
+    role_map = {}
+    if user_ids:
+        role_stmt = select(SysUserRoleRef).where(SysUserRoleRef.user_id.in_(user_ids))
+        role_result = await db.execute(role_stmt)
+        role_refs = role_result.scalars().all()
+        
+        for ref in role_refs:
+            if ref.user_id not in role_map:
+                role_map[ref.user_id] = []
+            role_map[ref.user_id].append(ref.role_id)
+            
     users = []
-    for row in result.all():
+    for row in users_with_dept:
         u = row[0]
         # dept_name = row[1] # If we wanted to include dept name flattened
         
-        # Fetch role ids for each user? This might be N+1 problem. 
-        # For now, let's keep it simple or fetch separately if performance logic allows.
-        # Original code did: iterate and fetch roles for each.
-        role_stmt = select(SysUserRoleRef.role_id).where(SysUserRoleRef.user_id == u.id)
-        r_result = await db.execute(role_stmt)
-        r_ids = r_result.scalars().all()
-        
         u_dict = UserResponse.model_validate(u).model_dump()
-        u_dict['role_ids'] = list(r_ids)
+        u_dict['role_ids'] = role_map.get(u.id, [])
         users.append(u_dict)
         
-    return {"list": users, "total": total}
+    return ResponseSchema(data=PageSchema(list=users, total=total))
 
-@router.post("/add")
+@router.post("/add", response_model=ResponseSchema)
 async def add_user(
     form: UserEditForm,
     db: AsyncSession = Depends(deps.get_db),
@@ -143,9 +155,9 @@ async def add_user(
             db.add(SysUserRoleRef(user_id=new_user.id, role_id=rid))
             
     await db.commit()
-    return {"code": 200, "message": "Success"}
+    return ResponseSchema(message="Success")
 
-@router.put("/update")
+@router.put("/update", response_model=ResponseSchema)
 async def update_user(
     form: UserEditForm,
     db: AsyncSession = Depends(deps.get_db),
@@ -178,9 +190,9 @@ async def update_user(
             db.add(SysUserRoleRef(user_id=user.id, role_id=rid))
             
     await db.commit()
-    return {"code": 200, "message": "Success"}
+    return ResponseSchema(message="Success")
 
-@router.delete("/delete")
+@router.delete("/delete", response_model=ResponseSchema)
 async def delete_users(
     form: DeleteObjsForm,
     db: AsyncSession = Depends(deps.get_db),
@@ -198,9 +210,9 @@ async def delete_users(
     
     await db.execute(delete(SysUser).where(SysUser.id.in_(form.uid_arr)))
     await db.commit()
-    return {"code": 200, "message": "Success"}
+    return ResponseSchema(message="Success")
 
-@router.post("/reset/password")
+@router.post("/reset/password", response_model=ResponseSchema)
 async def reset_password(
     form: ModifyPasswordForm,
     db: AsyncSession = Depends(deps.get_db),
@@ -218,9 +230,9 @@ async def reset_password(
     await db.commit()
     
     relogin = (user.id == current_user.id)
-    return {"result": {"relogin": relogin}, "code": 200}
+    return ResponseSchema(data={"relogin": relogin})
     
-@router.post("/change/active")
+@router.post("/change/active", response_model=ResponseSchema)
 async def change_active_status(
     form: ChangeStatusForm,
     db: AsyncSession = Depends(deps.get_db),
@@ -236,9 +248,9 @@ async def change_active_status(
     user.is_active = form.status
     user.update_by = current_user.username
     await db.commit()
-    return {"code": 200, "message": "Success"}
+    return ResponseSchema(message="Success")
 
-@router.get("/options")
+@router.get("/options", response_model=ResponseSchema)
 async def get_user_options(
     keywords: Optional[str] = None,
     db: AsyncSession = Depends(deps.get_db),
@@ -251,4 +263,4 @@ async def get_user_options(
     result = await db.execute(stmt)
     users = result.scalars().all()
     
-    return {"result": [{"label": u.username, "value": u.id} for u in users]}
+    return ResponseSchema(data={"result": [{"label": u.username, "value": u.id} for u in users]})

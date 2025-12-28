@@ -8,6 +8,8 @@ from app.api.v1.admin.sys import config as admin_config
 from app.api.v1.admin.sys import dept as admin_dept
 from app.api.v1.admin.sys import dict as admin_dict
 from app.api.v1.admin.sys import dict_item as admin_dict_item
+from app.api.v1.admin.sys import menu as admin_menu
+from app.api.v1.admin.sys import role as admin_role
 
 api_router = APIRouter()
 # api_router.include_router(admin_items.router, prefix="/admin/items", tags=["admin-items"])
@@ -18,3 +20,6 @@ api_router.include_router(admin_config.router, prefix="/admin/sys/config", tags=
 api_router.include_router(admin_dept.router, prefix="/admin/sys/dept", tags=["admin-dept"])
 api_router.include_router(admin_dict.router, prefix="/admin/sys/dict", tags=["admin-dict"])
 api_router.include_router(admin_dict_item.router, prefix="/admin/sys/dict", tags=["admin-dict-item"])
+api_router.include_router(admin_menu.router, prefix="/admin/sys/menu", tags=["admin-menu"])
+api_router.include_router(admin_role.router, prefix="/admin/sys/role", tags=["admin-role"])
+

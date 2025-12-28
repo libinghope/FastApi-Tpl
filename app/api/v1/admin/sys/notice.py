@@ -11,6 +11,7 @@ from app.schemas.sys.notice import (
     NoticeUpdate,
     NoticeResponse,
 )
+from app.schemas.response import ResponseSchema, PageSchema
 from pydantic import BaseModel
 from datetime import datetime
 
@@ -19,7 +20,7 @@ router = APIRouter()
 class DeleteObjsForm(BaseModel):
     ids: List[int]
 
-@router.get("/list", response_model=Any)
+@router.get("/list", response_model=ResponseSchema[PageSchema[NoticeResponse]])
 async def notice_list(
     title: str = None,
     page: int = 1,
@@ -44,12 +45,12 @@ async def notice_list(
     # Original did: fetch publisher name. 
     # We can join with SysUser if needed, but let's stick to simple return first.
     
-    return {
-        "list": [NoticeResponse.model_validate(n).model_dump() for n in notices],
-        "total": total
-    }
+    return ResponseSchema(data=PageSchema(
+        list=[NoticeResponse.model_validate(n).model_dump() for n in notices],
+        total=total
+    ))
 
-@router.post("/add")
+@router.post("/add", response_model=ResponseSchema)
 async def add_notice(
     form: NoticeCreate,
     db: AsyncSession = Depends(deps.get_db),
@@ -62,9 +63,9 @@ async def add_notice(
     db.add(new_notice)
     await db.commit()
     await db.refresh(new_notice)
-    return {"code": 200, "message": "Success"}
+    return ResponseSchema(message="Success")
 
-@router.post("/update")
+@router.post("/update", response_model=ResponseSchema)
 async def update_notice(
     form: NoticeUpdate,
     db: AsyncSession = Depends(deps.get_db),
@@ -79,9 +80,9 @@ async def update_notice(
         
     notice.update_by = current_user.username
     await db.commit()
-    return {"code": 200, "message": "Success"}
+    return ResponseSchema(message="Success")
 
-@router.post("/delete")
+@router.post("/delete", response_model=ResponseSchema)
 async def delete_notices(
     form: DeleteObjsForm,
     db: AsyncSession = Depends(deps.get_db),
@@ -91,9 +92,9 @@ async def delete_notices(
     # Delete user associations?
     await db.execute(delete(SysUserNotice).where(SysUserNotice.notice_id.in_(form.ids)))
     await db.commit()
-    return {"code": 200, "message": "Success"}
+    return ResponseSchema(message="Success")
 
-@router.get("/detail/{notice_id}")
+@router.get("/detail/{notice_id}", response_model=ResponseSchema)
 async def notice_detail(
     notice_id: int,
     db: AsyncSession = Depends(deps.get_db),
@@ -125,9 +126,9 @@ async def notice_detail(
         user_notice.read_time = datetime.now()
         await db.commit()
         
-    return {"result": NoticeResponse.model_validate(notice).model_dump()}
+    return ResponseSchema(data={"result": NoticeResponse.model_validate(notice).model_dump()})
 
-@router.post("/publish/{notice_id}")
+@router.post("/publish/{notice_id}", response_model=ResponseSchema)
 async def publish_notice(
     notice_id: int,
     db: AsyncSession = Depends(deps.get_db),
@@ -141,9 +142,9 @@ async def publish_notice(
     notice.publish_time = datetime.now()
     notice.update_by = current_user.username
     await db.commit()
-    return {"code": 200, "message": "Success"}
+    return ResponseSchema(message="Success")
 
-@router.post("/revoke/{notice_id}")
+@router.post("/revoke/{notice_id}", response_model=ResponseSchema)
 async def revoke_notice(
     notice_id: int,
     db: AsyncSession = Depends(deps.get_db),
@@ -157,9 +158,9 @@ async def revoke_notice(
     notice.revoke_time = datetime.now()
     notice.update_by = current_user.username
     await db.commit()
-    return {"code": 200, "message": "Success"}
+    return ResponseSchema(message="Success")
 
-@router.get("/my-list")
+@router.get("/my-list", response_model=ResponseSchema[PageSchema[NoticeResponse]])
 async def my_notice_list(
     page: int = 1,
     size: int = 20,
@@ -202,12 +203,12 @@ async def my_notice_list(
     end = start + size
     ret_notices = valid_notices[start:end]
     
-    return {
-        "list": [NoticeResponse.model_validate(n).model_dump() for n in ret_notices],
-        "total": total
-    }
+    return ResponseSchema(data=PageSchema(
+        list=[NoticeResponse.model_validate(n).model_dump() for n in ret_notices],
+        total=total
+    ))
 
-@router.post("/allRead")
+@router.post("/allRead", response_model=ResponseSchema)
 async def read_all_notices(
     db: AsyncSession = Depends(deps.get_db),
     current_user: SysUser = Depends(deps.get_current_user),
@@ -252,4 +253,4 @@ async def read_all_notices(
                  un.read_time = datetime.now()
                  
     await db.commit()
-    return {"code": 200, "message": "Success"}
+    return ResponseSchema(message="Success")
