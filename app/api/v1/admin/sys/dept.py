@@ -14,6 +14,7 @@ from app.schemas.sys.dept import (
     DeleteObjsForm
 )
 from app.schemas.response import ResponseSchema
+from app.core.codes import ErrorCode
 
 router = APIRouter()
 
@@ -66,7 +67,7 @@ async def add_dept(
     # Check if code exists
     stmt = select(SysDept).where(SysDept.code == form.code)
     if await db.scalar(stmt):
-        raise HTTPException(status_code=400, detail="Department code already exists")
+        return ResponseSchema(code=ErrorCode.DEPT_ALREADY_EXISTS, message="Department code already exists")
 
     new_dept = SysDept(**form.model_dump())
     new_dept.create_by = current_user.username
@@ -80,9 +81,9 @@ async def add_dept(
         parent_stmt = select(SysDept).where(SysDept.id == new_dept.parent_id)
         parent = await db.scalar(parent_stmt)
         if not parent:
-            raise HTTPException(status_code=404, detail="Parent department not found")
+            return ResponseSchema(code=ErrorCode.PARENT_DEPT_NOT_FOUND, message="Parent department not found")
         if not parent.status: # Check if parent is disabled
-             raise HTTPException(status_code=400, detail="Parent department is disabled")
+             return ResponseSchema(code=ErrorCode.PARENT_DEPT_DISABLED, message="Parent department is disabled")
         new_dept.tree_path = f"{parent.tree_path},{parent.id}"
 
     db.add(new_dept)
@@ -100,16 +101,16 @@ async def update_dept(
     """
     dept = await db.get(SysDept, form.id)
     if not dept:
-        raise HTTPException(status_code=404, detail="Department not found")
+        return ResponseSchema(code=ErrorCode.DEPT_NOT_FOUND, message="Department not found")
 
     if dept.id == form.parent_id:
-         raise HTTPException(status_code=400, detail="Cannot set parent to self")
+         return ResponseSchema(code=ErrorCode.INVALID_ARGUMENT, message="Cannot set parent to self")
 
     # Check code uniqueness if changed
     if form.code != dept.code:
         stmt = select(SysDept).where(SysDept.code == form.code)
         if await db.scalar(stmt):
-            raise HTTPException(status_code=400, detail="Department code already exists")
+            return ResponseSchema(code=ErrorCode.DEPT_ALREADY_EXISTS, message="Department code already exists")
     
     # Update simple fields
     dept.name = form.name
@@ -127,7 +128,7 @@ async def update_dept(
             parent_stmt = select(SysDept).where(SysDept.id == form.parent_id)
             parent = await db.scalar(parent_stmt)
             if not parent:
-                 raise HTTPException(status_code=404, detail="Parent department not found")
+                 return ResponseSchema(code=ErrorCode.PARENT_DEPT_NOT_FOUND, message="Parent department not found")
             new_tree_path = f"{parent.tree_path},{parent.id}"
             
         # Update children's tree_path? 
@@ -179,12 +180,12 @@ async def delete_dept(
     # Check if any dept has children
     stmt = select(SysDept).where(SysDept.parent_id.in_(form.ids))
     if await db.scalar(stmt):
-         raise HTTPException(status_code=400, detail="Cannot delete department with children")
+         return ResponseSchema(code=ErrorCode.OPERATION_FAILED, message="Cannot delete department with children")
          
     # Check if assigned to users?
     user_stmt = select(SysUser).where(SysUser.dept_id.in_(form.ids))
     if await db.scalar(user_stmt):
-         raise HTTPException(status_code=400, detail="Cannot delete department with users")
+         return ResponseSchema(code=ErrorCode.OPERATION_FAILED, message="Cannot delete department with users")
 
     await db.execute(delete(SysDept).where(SysDept.id.in_(form.ids)))
     await db.commit()

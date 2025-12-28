@@ -8,6 +8,7 @@ from app.models.sys.config import SysConfig
 from app.models.sys.user import SysUser
 from app.schemas.sys.config import ConfigCreate, ConfigUpdate, ConfigResponse
 from app.schemas.response import ResponseSchema, PageSchema
+from app.core.codes import ErrorCode
 
 router = APIRouter()
 
@@ -65,9 +66,9 @@ async def add_config(
     existing = result.scalars().first()
     if existing:
         if existing.key == form.key:
-             raise HTTPException(status_code=400, detail="Config Key already exists")
+             return ResponseSchema(code=ErrorCode.CONFIG_KEY_EXISTS, message="Config Key already exists")
         if existing.name == form.name:
-             raise HTTPException(status_code=400, detail="Config Name already exists")
+             return ResponseSchema(code=ErrorCode.CONFIG_NAME_EXISTS, message="Config Name already exists")
 
     new_config = SysConfig(
         name=form.name,
@@ -90,7 +91,7 @@ async def update_config(
 ):
     config = await db.get(SysConfig, form.id)
     if not config or config.delete_time is not None:
-         raise HTTPException(status_code=404, detail="Config not found")
+         return ResponseSchema(code=ErrorCode.CONFIG_NOT_FOUND, message="Config not found")
 
     # Check duplicates if key/name changed
     stmt = select(SysConfig).where(
@@ -102,9 +103,9 @@ async def update_config(
     existing = result.scalars().first()
     if existing:
         if existing.key == form.key:
-             raise HTTPException(status_code=400, detail="Config Key already exists")
+             return ResponseSchema(code=ErrorCode.CONFIG_KEY_EXISTS, message="Config Key already exists")
         if existing.name == form.name:
-             raise HTTPException(status_code=400, detail="Config Name already exists")
+             return ResponseSchema(code=ErrorCode.CONFIG_NAME_EXISTS, message="Config Name already exists")
 
     config.name = form.name
     config.key = form.key
@@ -125,7 +126,7 @@ async def delete_config(
 ):
     config = await db.get(SysConfig, id)
     if not config or config.delete_time is not None:
-        raise HTTPException(status_code=404, detail="Config not found")
+        return ResponseSchema(code=ErrorCode.CONFIG_NOT_FOUND, message="Config not found")
 
     # Soft delete
     from datetime import datetime

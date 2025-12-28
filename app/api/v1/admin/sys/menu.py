@@ -13,6 +13,7 @@ from app.schemas.sys.menu import (
     MenuTree
 )
 from app.schemas.response import ResponseSchema
+from app.core.codes import ErrorCode
 
 from pydantic import BaseModel
 
@@ -61,7 +62,7 @@ async def add_menu(
     else:
         parent = await db.get(SysMenu, new_menu.parent_id)
         if not parent:
-             raise HTTPException(status_code=404, detail="Parent menu not found")
+             return ResponseSchema(code=ErrorCode.PARENT_MENU_NOT_FOUND, message="Parent menu not found")
         new_menu.tree_path = f"{parent.tree_path},{parent.id}"
         
     db.add(new_menu)
@@ -77,11 +78,11 @@ async def update_menu(
 ):
     menu = await db.get(SysMenu, form.id)
     if not menu:
-        raise HTTPException(status_code=404, detail="Menu not found")
+        return ResponseSchema(code=ErrorCode.MENU_NOT_FOUND, message="Menu not found")
     
     # Check parent loop
     if menu.id == form.parent_id:
-        raise HTTPException(status_code=400, detail="Cannot set parent to self")
+        return ResponseSchema(code=ErrorCode.INVALID_ARGUMENT, message="Cannot set parent to self")
 
     # Update logic with tree path handling
     old_parent_id = menu.parent_id
@@ -96,7 +97,7 @@ async def update_menu(
         else:
             parent = await db.get(SysMenu, form.parent_id)
             if not parent:
-                raise HTTPException(status_code=404, detail="Parent menu not found")
+                return ResponseSchema(code=ErrorCode.PARENT_MENU_NOT_FOUND, message="Parent menu not found")
             new_tree_path = f"{parent.tree_path},{parent.id}"
             
         menu.tree_path = new_tree_path
@@ -137,7 +138,7 @@ async def delete_menu(
     # Check children
     stmt = select(SysMenu).where(SysMenu.parent_id == form.uid)
     if await db.scalar(stmt):
-        raise HTTPException(status_code=400, detail="Cannot delete menu with children")
+        return ResponseSchema(code=ErrorCode.OPERATION_FAILED, message="Cannot delete menu with children")
         
     await db.execute(delete(SysMenu).where(SysMenu.id == form.uid))
     await db.execute(delete(SysRoleMenu).where(SysRoleMenu.menu_id == form.uid))

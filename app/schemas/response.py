@@ -1,10 +1,10 @@
-from typing import Generic, TypeVar, Optional, Any
+from typing import Generic, TypeVar, Optional, Any, Union
 from pydantic import BaseModel
 
 T = TypeVar("T")
 
 class ResponseSchema(BaseModel, Generic[T]):
-    code: int = 200
+    code: Union[int, str] = 200
     message: str = "Success"
     data: Optional[T] = None
     

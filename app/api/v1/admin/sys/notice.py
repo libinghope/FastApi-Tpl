@@ -12,6 +12,7 @@ from app.schemas.sys.notice import (
     NoticeResponse,
 )
 from app.schemas.response import ResponseSchema, PageSchema
+from app.core.codes import ErrorCode
 from pydantic import BaseModel
 from datetime import datetime
 
@@ -73,7 +74,7 @@ async def update_notice(
 ):
     notice = await db.get(SysNotice, form.id)
     if not notice:
-        raise HTTPException(status_code=404, detail="Notice not found")
+        return ResponseSchema(code=ErrorCode.NOTICE_NOT_FOUND, message="Notice not found")
         
     for key, value in form.model_dump().items():
         setattr(notice, key, value)
@@ -102,7 +103,7 @@ async def notice_detail(
 ):
     notice = await db.get(SysNotice, notice_id)
     if not notice:
-        raise HTTPException(status_code=404, detail="Notice not found")
+        return ResponseSchema(code=ErrorCode.NOTICE_NOT_FOUND, message="Notice not found")
         
     # Mark as read for current user if not already?
     # Logic: check if SysUserNotice exists, if not create, if exists check is_read.
@@ -136,7 +137,7 @@ async def publish_notice(
 ):
     notice = await db.get(SysNotice, notice_id)
     if not notice:
-        raise HTTPException(status_code=404, detail="Notice not found")
+        return ResponseSchema(code=ErrorCode.NOTICE_NOT_FOUND, message="Notice not found")
         
     notice.publish_status = 1 # Published
     notice.publish_time = datetime.now()
@@ -152,7 +153,7 @@ async def revoke_notice(
 ):
     notice = await db.get(SysNotice, notice_id)
     if not notice:
-        raise HTTPException(status_code=404, detail="Notice not found")
+        return ResponseSchema(code=ErrorCode.NOTICE_NOT_FOUND, message="Notice not found")
         
     notice.publish_status = 0 # Draft/Revoked
     notice.revoke_time = datetime.now()

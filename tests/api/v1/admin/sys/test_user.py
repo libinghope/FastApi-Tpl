@@ -224,9 +224,11 @@ async def test_add_user_duplicate(client, override_deps, mock_db_session):
     response = await client.post("/api/v1/admin/sys/user/add", json=payload)
 
     # 验证响应结果
-    assert response.status_code == 400  # 验证HTTP状态码为400（错误请求）
+    assert response.status_code == 200  # 验证HTTP状态码为200 (始终返回200)
+    assert response.status_code == 200  # 验证HTTP状态码为200 (始终返回200)
+    assert response.json()["code"] == "USER_ALREADY_EXISTS"  # 验证业务状态码为USER_ALREADY_EXISTS
     assert (
-        "already exists" in response.json()["detail"]
+        "already exists" in response.json()["message"]
     )  # 验证错误信息包含"already exists"
 
 
@@ -284,7 +286,9 @@ async def test_update_user_not_found(client, override_deps, mock_db_session):
     response = await client.put("/api/v1/admin/sys/user/update", json=payload)
 
     # 验证响应结果
-    assert response.status_code == 404  # 验证HTTP状态码为404（资源不存在）
+    # 验证响应结果
+    assert response.status_code == 200  # 验证HTTP状态码为200 (始终返回200)
+    assert response.json()["code"] == "USER_NOT_FOUND"  # 验证业务状态码为USER_NOT_FOUND
 
 
 @pytest.mark.anyio
@@ -334,9 +338,11 @@ async def test_delete_self(client, override_deps, mock_db_session):
     )
 
     # 验证响应结果
-    assert response.status_code == 400  # 验证HTTP状态码为400（错误请求）
+    # 验证响应结果
+    assert response.status_code == 200  # 验证HTTP状态码为200 (始终返回200)
+    assert response.json()["code"] == "INVALID_ARGUMENT"  # 验证业务状态码为INVALID_ARGUMENT
     assert (
-        "Cannot delete yourself" in response.json()["detail"]
+        "Cannot delete yourself" in response.json()["message"]
     )  # 验证错误信息包含"Cannot delete yourself"
 
 

@@ -24,6 +24,7 @@ from app.schemas.sys.user import (
     BindEmailForm,
 )
 from app.schemas.response import ResponseSchema, PageSchema
+from app.core.codes import ErrorCode
 
 router = APIRouter()
 
@@ -134,7 +135,7 @@ async def add_user(
     # Check username
     stmt = select(SysUser).where(SysUser.username == form.username)
     if await db.scalar(stmt):
-        raise HTTPException(status_code=400, detail="Username already exists")
+        return ResponseSchema(code=ErrorCode.USER_ALREADY_EXISTS, message="Username already exists")
         
     new_user = SysUser(
         username=form.username,
@@ -164,11 +165,11 @@ async def update_user(
     current_user: SysUser = Depends(deps.get_current_user),
 ):
     if not form.id:
-        raise HTTPException(status_code=400, detail="User ID is required")
+        return ResponseSchema(code=ErrorCode.INVALID_ARGUMENT, message="User ID is required")
         
     user = await db.get(SysUser, form.id)
     if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+        return ResponseSchema(code=ErrorCode.USER_NOT_FOUND, message="User not found")
         
     # Update fields
     if form.nickname is not None: user.nickname = form.nickname
@@ -200,7 +201,7 @@ async def delete_users(
 ):
     # Cannot delete self
     if current_user.id in form.uid_arr:
-        raise HTTPException(status_code=400, detail="Cannot delete yourself")
+        return ResponseSchema(code=ErrorCode.INVALID_ARGUMENT, message="Cannot delete yourself")
     
     # Delete relationships first or rely on cascade? 
     # Usually cascade is set in DB, but let's be safe or just delete user.
@@ -220,10 +221,10 @@ async def reset_password(
 ):
     user = await db.get(SysUser, form.id)
     if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+        return ResponseSchema(code=ErrorCode.USER_NOT_FOUND, message="User not found")
         
     if form.password != form.password2:
-        raise HTTPException(status_code=400, detail="Passwords do not match")
+        return ResponseSchema(code=ErrorCode.PASSWORD_MISMATCH, message="Passwords do not match")
         
     user.hashed_password = security.get_password_hash(form.password)
     user.update_by = current_user.username
@@ -239,11 +240,11 @@ async def change_active_status(
     current_user: SysUser = Depends(deps.get_current_user),
 ):
     if form.user_uid == current_user.id:
-        raise HTTPException(status_code=400, detail="Cannot change your own status")
+        return ResponseSchema(code=ErrorCode.INVALID_ARGUMENT, message="Cannot change your own status")
         
     user = await db.get(SysUser, form.user_uid)
     if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+        return ResponseSchema(code=ErrorCode.USER_NOT_FOUND, message="User not found")
         
     user.is_active = form.status
     user.update_by = current_user.username

@@ -41,7 +41,7 @@ async def update_dict_item(
 ):
     item = await db.get(SysDictItem, form.id)
     if not item:
-        raise HTTPException(status_code=404, detail="Dict item not found")
+        return ResponseSchema(code=ErrorCode.DICT_ITEM_NOT_FOUND, message="Dict item not found")
         
     for key, value in form.model_dump(exclude={"id"}).items():
         setattr(item, key, value)

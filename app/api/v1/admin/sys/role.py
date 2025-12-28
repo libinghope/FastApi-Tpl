@@ -15,6 +15,7 @@ from app.schemas.sys.role import (
     DeleteObjsForm
 )
 from app.schemas.response import ResponseSchema, PageSchema
+from app.core.codes import ErrorCode
 from pydantic import BaseModel
 
 router = APIRouter()
@@ -69,7 +70,7 @@ async def add_role(
 ):
     stmt = select(SysRole).where(SysRole.code == form.code)
     if await db.scalar(stmt):
-        raise HTTPException(status_code=400, detail="Role code already exists")
+        return ResponseSchema(code=ErrorCode.ROLE_ALREADY_EXISTS, message="Role code already exists")
         
     new_role = SysRole(**form.model_dump())
     new_role.create_by = current_user.username
@@ -86,12 +87,12 @@ async def update_role(
 ):
     role = await db.get(SysRole, form.id)
     if not role:
-        raise HTTPException(status_code=404, detail="Role not found")
+        return ResponseSchema(code=404, message="Role not found")
         
     if role.code != form.code:
         stmt = select(SysRole).where(SysRole.code == form.code)
         if await db.scalar(stmt):
-            raise HTTPException(status_code=400, detail="Role code already exists")
+            return ResponseSchema(code=ErrorCode.ROLE_ALREADY_EXISTS, message="Role code already exists")
             
     for key, value in form.model_dump().items():
         setattr(role, key, value)
@@ -136,7 +137,7 @@ async def assign_perms(
 ):
     role = await db.get(SysRole, role_id)
     if not role:
-        raise HTTPException(status_code=404, detail="Role not found")
+        return ResponseSchema(code=404, message="Role not found")
         
     # Delete existing
     await db.execute(delete(SysRoleMenu).where(SysRoleMenu.role_id == role_id))
@@ -159,7 +160,7 @@ async def update_role_status(
 ):
     role = await db.get(SysRole, role_id)
     if not role:
-        raise HTTPException(status_code=404, detail="Role not found")
+        return ResponseSchema(code=404, message="Role not found")
         
     role.status = 1 if status else 0
     role.update_by = current_user.username

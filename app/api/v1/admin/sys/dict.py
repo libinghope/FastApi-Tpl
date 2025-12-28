@@ -8,7 +8,8 @@ from app.api import deps
 from app.models.sys.user import SysUser
 from app.models.sys.dictionary import SysDict
 from app.schemas.sys.dict import DictCreate, DictUpdate, DictResponse, DeleteObjsForm
-from app.schemas.response import ResponseSchema, PageSchema
+from app.schemas.response import response
+from app.core.codes import ErrorCode
 
 router = APIRouter()
 
@@ -38,7 +39,7 @@ async def list_dicts(
     result = await db.execute(stmt)
     dicts = result.scalars().all()
     
-    return ResponseSchema(data=PageSchema(list=[DictResponse.model_validate(d) for d in dicts], total=total))
+    return response(data=PageSchema(list=[DictResponse.model_validate(d) for d in dicts], total=total))
 
 @router.post("/add", response_model=ResponseSchema)
 async def add_dict(
@@ -48,12 +49,12 @@ async def add_dict(
 ):
     stmt = select(SysDict).where(SysDict.code == form.code)
     if await db.scalar(stmt):
-        raise HTTPException(status_code=400, detail="Dict code already exists")
+        return response(code=ErrorCode.DICT_ALREADY_EXISTS, message="Dict code already exists")
         
     new_dict = SysDict(**form.model_dump())
     db.add(new_dict)
     await db.commit()
-    return ResponseSchema(message="Success")
+    return response(message="Success")
 
 @router.post("/update", response_model=ResponseSchema)
 async def update_dict(
@@ -63,13 +64,13 @@ async def update_dict(
 ):
     dict_obj = await db.get(SysDict, form.id)
     if not dict_obj:
-        raise HTTPException(status_code=404, detail="Dict not found")
+        return response(code=ErrorCode.DICT_NOT_FOUND, message="Dict not found")
         
     for key, value in form.model_dump(exclude={"id"}).items():
         setattr(dict_obj, key, value)
         
     await db.commit()
-    return ResponseSchema(message="Success")
+    return response(message="Success")
 
 @router.post("/delete", response_model=ResponseSchema)
 async def delete_dict(
@@ -79,4 +80,4 @@ async def delete_dict(
 ):
     await db.execute(delete(SysDict).where(SysDict.id.in_(form.uid_arr)))
     await db.commit()
-    return ResponseSchema(message="Success")
+    return response(message="Success")
