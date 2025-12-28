@@ -1,5 +1,6 @@
 from typing import Any, List
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, status
+from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
@@ -8,7 +9,6 @@ from app.models.item import Item as ItemModel
 from app.schemas.item import Item, ItemCreate, ItemUpdate
 from app.schemas.response import ResponseSchema, response
 from app.core.codes import ErrorCode
-from app.core.exceptions import APIException
 
 router = APIRouter()
 
@@ -47,7 +47,12 @@ async def read_item(item_id: int, db: AsyncSession = Depends(get_db)) -> Any:
     result = await db.execute(select(ItemModel).where(ItemModel.id == item_id))
     item = result.scalar_one_or_none()
     if not item:
-        raise APIException(code=ErrorCode.NOT_FOUND, message="Item not found")
+        return JSONResponse(
+            status_code=status.HTTP_404_NOT_FOUND,
+            content=ResponseSchema(
+                code=ErrorCode.NOT_FOUND, message="Item not found", data=None
+            ).model_dump(),
+        )
     return response(data=item)
 
 
@@ -61,7 +66,12 @@ async def update_item(
     result = await db.execute(select(ItemModel).where(ItemModel.id == item_id))
     item = result.scalar_one_or_none()
     if not item:
-        raise APIException(code=ErrorCode.NOT_FOUND, message="Item not found")
+        return JSONResponse(
+            status_code=status.HTTP_404_NOT_FOUND,
+            content=ResponseSchema(
+                code=ErrorCode.NOT_FOUND, message="Item not found", data=None
+            ).model_dump(),
+        )
     item.title = item_in.title
     item.description = item_in.description
     await db.commit()
@@ -77,7 +87,12 @@ async def delete_item(item_id: int, db: AsyncSession = Depends(get_db)) -> Any:
     result = await db.execute(select(ItemModel).where(ItemModel.id == item_id))
     item = result.scalar_one_or_none()
     if not item:
-        raise APIException(code=ErrorCode.NOT_FOUND, message="Item not found")
+        return JSONResponse(
+            status_code=status.HTTP_404_NOT_FOUND,
+            content=ResponseSchema(
+                code=ErrorCode.NOT_FOUND, message="Item not found", data=None
+            ).model_dump(),
+        )
     await db.delete(item)
     await db.commit()
     return response(data=item)
