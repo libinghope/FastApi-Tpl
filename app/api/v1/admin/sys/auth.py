@@ -35,7 +35,7 @@ async def login_access_token(
             content=ResponseSchema(
                 code=ErrorCode.LOGIN_FAILED,
                 message="User account is locked due to too many failed login attempts. Please try again later.",
-                data=None,
+                result=None,
             ).model_dump(),
         )
 
@@ -60,7 +60,7 @@ async def login_access_token(
                 content=ResponseSchema(
                     code=ErrorCode.LOGIN_FAILED,
                     message="Too many failed login attempts. Account has been locked.",
-                    data=None,
+                    result=None,
                 ).model_dump(),
             )
 
@@ -72,7 +72,7 @@ async def login_access_token(
             content=ResponseSchema(
                 code=ErrorCode.LOGIN_FAILED,
                 message="Incorrect username or password",
-                data=None,
+                result=None,
             ).model_dump(),
         )
 
@@ -80,7 +80,7 @@ async def login_access_token(
         return JSONResponse(
             status_code=status.HTTP_400_BAD_REQUEST,
             content=ResponseSchema(
-                code=ErrorCode.USER_DISABLED, message="Inactive user", data=None
+                code=ErrorCode.USER_DISABLED, message="Inactive user", result=None
             ).model_dump(),
         )
 

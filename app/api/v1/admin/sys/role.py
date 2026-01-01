@@ -7,21 +7,19 @@ from app.api import deps
 from app.models.sys.role import SysRole
 from app.models.sys.menu import SysRoleMenu, SysMenu
 from app.models.sys.user import SysUser
+
 # from app.models.sys.user import SysUser as User # Avoid alias confusion
-from app.schemas.sys.role import (
-    RoleCreate,
-    RoleUpdate,
-    RoleResponse,
-    DeleteObjsForm
-)
+from app.schemas.sys.role import RoleCreate, RoleUpdate, RoleResponse, DeleteObjsForm
 from app.schemas.response import ResponseSchema, PageSchema
 from app.core.codes import ErrorCode
 from pydantic import BaseModel
 
 router = APIRouter()
 
+
 class RoleAssignPermsForm(BaseModel):
     menu_ids: List[int]
+
 
 @router.get("/list", response_model=ResponseSchema[PageSchema[RoleResponse]])
 async def role_list(
@@ -37,20 +35,23 @@ async def role_list(
         stmt = stmt.where(SysRole.name.like(f"%{name}%"))
     if status is not None:
         stmt = stmt.where(SysRole.status == status)
-    
+
     # Count query
     count_stmt = select(func.count()).select_from(stmt.subquery())
     total = await db.scalar(count_stmt) or 0
-    
+
     # Pagination
     stmt = stmt.offset((page - 1) * size).limit(size)
     result = await db.execute(stmt)
     roles = result.scalars().all()
-    
-    return ResponseSchema(data=PageSchema(
-        list=[RoleResponse.model_validate(r).model_dump() for r in roles],
-        total=total
-    ))
+
+    return ResponseSchema(
+        result=PageSchema(
+            list=[RoleResponse.model_validate(r).model_dump() for r in roles],
+            total=total,
+        )
+    )
+
 
 @router.get("/options", response_model=ResponseSchema)
 async def role_options(
@@ -60,7 +61,10 @@ async def role_options(
     stmt = select(SysRole).where(SysRole.status == 1).order_by(SysRole.sort)
     result = await db.execute(stmt)
     roles = result.scalars().all()
-    return ResponseSchema(data={"result": [RoleResponse.model_validate(r).model_dump() for r in roles]})
+    return ResponseSchema(
+        result={"result": [RoleResponse.model_validate(r).model_dump() for r in roles]}
+    )
+
 
 @router.post("/add", response_model=ResponseSchema)
 async def add_role(
@@ -70,14 +74,19 @@ async def add_role(
 ):
     stmt = select(SysRole).where(SysRole.code == form.code)
     if await db.scalar(stmt):
-        return ResponseSchema(code=ErrorCode.ROLE_ALREADY_EXISTS, message="Role code already exists")
-        
+        return ResponseSchema(
+            code=ErrorCode.ROLE_ALREADY_EXISTS, message="Role code already exists"
+        )
+
     new_role = SysRole(**form.model_dump())
     new_role.create_by = current_user.username
     db.add(new_role)
     await db.commit()
     await db.refresh(new_role)
-    return ResponseSchema(message="Success", data={"result": {"role_id": new_role.id}})
+    return ResponseSchema(
+        message="Success", result={"result": {"role_id": new_role.id}}
+    )
+
 
 @router.post("/update", response_model=ResponseSchema)
 async def update_role(
@@ -88,18 +97,21 @@ async def update_role(
     role = await db.get(SysRole, form.id)
     if not role:
         return ResponseSchema(code=404, message="Role not found")
-        
+
     if role.code != form.code:
         stmt = select(SysRole).where(SysRole.code == form.code)
         if await db.scalar(stmt):
-            return ResponseSchema(code=ErrorCode.ROLE_ALREADY_EXISTS, message="Role code already exists")
-            
+            return ResponseSchema(
+                code=ErrorCode.ROLE_ALREADY_EXISTS, message="Role code already exists"
+            )
+
     for key, value in form.model_dump().items():
         setattr(role, key, value)
-        
+
     role.update_by = current_user.username
     await db.commit()
     return ResponseSchema(message="Success")
+
 
 @router.post("/delete", response_model=ResponseSchema)
 async def delete_roles(
@@ -109,13 +121,14 @@ async def delete_roles(
 ):
     # Check if roles are assigned to users?
     # Keeping it simple for now, usually we check user_role link table if exists
-    
+
     await db.execute(delete(SysRole).where(SysRole.id.in_(form.ids)))
     # Also delete role-menu associations?
     await db.execute(delete(SysRoleMenu).where(SysRoleMenu.role_id.in_(form.ids)))
-    
+
     await db.commit()
     return ResponseSchema(message="Success")
+
 
 @router.get("/{role_id}/menu_ids", response_model=ResponseSchema)
 async def get_role_menu_ids(
@@ -126,7 +139,8 @@ async def get_role_menu_ids(
     stmt = select(SysRoleMenu.menu_id).where(SysRoleMenu.role_id == role_id)
     result = await db.execute(stmt)
     menu_ids = result.scalars().all()
-    return ResponseSchema(data={"result": menu_ids})
+    return ResponseSchema(result={"result": menu_ids})
+
 
 @router.post("/{role_id}/assign_perms", response_model=ResponseSchema)
 async def assign_perms(
@@ -138,18 +152,19 @@ async def assign_perms(
     role = await db.get(SysRole, role_id)
     if not role:
         return ResponseSchema(code=404, message="Role not found")
-        
+
     # Delete existing
     await db.execute(delete(SysRoleMenu).where(SysRoleMenu.role_id == role_id))
-    
+
     # Add new
     if form.menu_ids:
         # Validate menu ids? optional
         values = [{"role_id": role_id, "menu_id": mid} for mid in form.menu_ids]
         await db.execute(insert(SysRoleMenu), values)
-        
+
     await db.commit()
     return ResponseSchema(message="Success")
+
 
 @router.post("/{role_id}/update_status", response_model=ResponseSchema)
 async def update_role_status(
@@ -161,7 +176,7 @@ async def update_role_status(
     role = await db.get(SysRole, role_id)
     if not role:
         return ResponseSchema(code=404, message="Role not found")
-        
+
     role.status = 1 if status else 0
     role.update_by = current_user.username
     await db.commit()

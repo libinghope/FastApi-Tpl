@@ -1,12 +1,14 @@
 from typing import Optional, List
 from pydantic import BaseModel, Field, ConfigDict
 from datetime import datetime
+from app.globals.enum import MenuType
+
 
 class MenuBase(BaseModel):
     parent_id: int = Field(0, description="Parent Menu ID")
     tree_path: Optional[str] = Field(None, max_length=255, description="Tree Path")
     name: str = Field(..., max_length=64, description="Menu Name")
-    type: int = Field(..., description="Menu Type")
+    type: MenuType = Field(..., description="Menu Type")
     route_name: Optional[str] = Field(None, max_length=255)
     route_path: Optional[str] = Field(None, max_length=128)
     component: Optional[str] = Field(None, max_length=128)
@@ -19,19 +21,23 @@ class MenuBase(BaseModel):
     redirect: Optional[str] = Field(None, max_length=128)
     params: Optional[str] = Field(None, max_length=1024)
 
+
 class MenuCreate(MenuBase):
     pass
 
+
 class MenuUpdate(MenuBase):
     id: int
+
 
 class MenuResponse(MenuBase):
     id: int
     create_time: Optional[datetime] = None
     update_time: Optional[datetime] = None
-    children: Optional[List['MenuResponse']] = None
+    children: Optional[List["MenuResponse"]] = None
 
     model_config = ConfigDict(from_attributes=True)
+
 
 class MenuTree(MenuResponse):
     pass

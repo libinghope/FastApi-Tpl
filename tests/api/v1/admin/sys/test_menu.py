@@ -4,6 +4,7 @@ from app.main import app
 from app.api import deps
 from app.models.sys.menu import SysMenu, SysRoleMenu
 from app.models.sys.user import SysUser, SysUserRoleRef
+from app.core.codes import ErrorCode
 
 # Mock User
 mock_superuser = SysUser(
@@ -62,10 +63,10 @@ async def test_menu_list(client, override_deps, mock_db_session):
     response = await client.get("/api/v1/admin/sys/menu/list")
     assert response.status_code == 200
     data = response.json()
-    assert data["code"] == 200
+    assert data["code"] == ErrorCode.SUCCESS
     assert data["message"] == "Success"
     # Tree: System -> Menu
-    result = data["result"]
+    result = data["data"]
     assert len(result) == 1
     assert result[0]["name"] == "System"
     assert len(result[0]["children"]) == 1
@@ -73,31 +74,6 @@ async def test_menu_list(client, override_deps, mock_db_session):
 
 @pytest.mark.anyio
 async def test_add_menu(client, override_deps, mock_db_session):
-    payload = {
-        "parent_id": 0,
-        "name": "New Menu",
-        "title": "New", # Schema check: title is not in model explicitly shown in menu.py model, but typical in schemas. 
-        # Let's check schema assumption. Assuming schema maps to model.
-        # Wait, model in `models/sys/menu.py` has `name`, `title` might be frontend field. 
-        # Schema `MenuCreate` likely has `name` and `title`. 
-        # But wait, looking at `menu.py` view, `SysMenu(**form.model_dump())` is used.
-        # Model has `name`, no `title`. 
-        # Let's use `name`.
-        "name": "New Menu",
-        "type": 1,
-        "path": "/new",
-        "component": "Layout",
-        "perm": "",
-        "visible": True,
-        "sort": 1,
-        "icon": "el-icon-menu",
-        "keep_alive": 0     
-    }
-    
-    # Actually validation error if I pass extra fields that are not in Schema. 
-    # I should have checked schema `app/schemas/sys/menu.py`.
-    # Based on `SysMenu` model: name, type, route_name, route_path, component, perm...
-    # I will guess common fields.
     payload = {
         "parent_id": 0,
         "name": "New Menu",
@@ -120,7 +96,7 @@ async def test_add_menu(client, override_deps, mock_db_session):
         print(response.json())
         
     assert response.status_code == 200
-    assert response.json()["code"] == 200
+    assert response.json()["code"] == ErrorCode.SUCCESS
 
 @pytest.mark.anyio
 async def test_add_menu_child(client, override_deps, mock_db_session):
@@ -211,8 +187,10 @@ async def test_delete_menu_with_children(client, override_deps, mock_db_session)
     mock_db_session.scalar.return_value = True
     
     response = await client.post("/api/v1/admin/sys/menu/delete", json=payload)
-    assert response.status_code == 400
-    assert "children" in response.json()["detail"]
+    assert response.status_code == 200
+    data = response.json()
+    assert data["code"] == ErrorCode.OPERATION_FAILED
+    assert "children" in data["message"]
 
 @pytest.mark.anyio
 async def test_get_routes_superuser(client, override_deps, mock_db_session):
@@ -225,10 +203,10 @@ async def test_get_routes_superuser(client, override_deps, mock_db_session):
     response = await client.get("/api/v1/admin/sys/menu/routes")
     assert response.status_code == 200
     data = response.json()
-    assert data["code"] == 200
-    assert len(data["result"]) == 1
+    assert data["code"] == ErrorCode.SUCCESS
+    assert len(data["data"]) == 1
     # Check structure
-    route = data["result"][0]
+    route = data["data"][0]
     assert "meta" in route
     assert route["meta"]["title"] == "M1"
     assert "path" in route
@@ -252,7 +230,7 @@ async def test_get_routes_normal_user(client, mock_db_session):
     response = await client.get("/api/v1/admin/sys/menu/routes")
     assert response.status_code == 200
     data = response.json()
-    assert data["code"] == 200
+    assert data["code"] == ErrorCode.SUCCESS
     # In a real integration test we would check if filtering happened, 
     # but here we just check if it runs without error and returns mocked result
     # since we mocked the execute result directly.

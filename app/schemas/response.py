@@ -1,4 +1,5 @@
 from typing import Generic, TypeVar, Optional, Any, Union
+from xxlimited import Str
 from pydantic import BaseModel
 from app.core.codes import ErrorCode
 
@@ -11,11 +12,11 @@ class ResponseSchema(BaseModel, Generic[T]):
     统一所有API的响应格式，包含业务错误码、响应消息和响应数据。
     """
 
-    code: int = ErrorCode.SUCCESS
+    code: str = ErrorCode.SUCCESS
     """业务错误码，200表示成功"""
     message: str = "Success"
     """响应消息，描述操作结果"""
-    data: Optional[T] = None
+    result: Optional[T] = None
     """响应数据，泛型类型，根据接口返回具体数据"""
 
     class Config:
@@ -35,7 +36,7 @@ class PageSchema(BaseModel, Generic[T]):
 
 
 def response(
-    code: int = ErrorCode.SUCCESS, message: str = "Success", data: Optional[T] = None
+    code: str = ErrorCode.SUCCESS, message: str = "Success", data: Optional[T] = None
 ) -> ResponseSchema[T]:
     """便捷响应创建函数
 
@@ -47,4 +48,4 @@ def response(
     Returns:
         统一格式的响应对象
     """
-    return ResponseSchema(code=code, message=message, data=data)
+    return ResponseSchema(code=code, message=message, result=data)

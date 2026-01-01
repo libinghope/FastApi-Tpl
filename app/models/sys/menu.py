@@ -1,17 +1,30 @@
-from sqlalchemy import Boolean, Column, Integer, SmallInteger, String, UniqueConstraint
+from typing import Any
+
+
+from sqlalchemy import (
+    Boolean,
+    Column,
+    Integer,
+    SmallInteger,
+    String,
+    UniqueConstraint,
+    Enum,
+)
 from app.models.base import BaseModel
+from app.globals.enum import MenuType
+
 
 class SysMenu(BaseModel):
     """菜单表"""
 
     __tablename__ = "sys_menu"
 
-    parent_id: int = Column(
-        Integer, nullable=False, default=0, comment="父菜单ID"
-    )
+    parent_id: int = Column(Integer, nullable=False, default=0, comment="父菜单ID")
     tree_path: str | None = Column(String(255), comment="父节点ID路径")
     name: str = Column(String(64), nullable=False, comment="菜单名称")
-    type: int = Column(SmallInteger, nullable=False, comment="菜单类型")
+    type: MenuType = Column[Enum](
+        Enum(MenuType), nullable=False, comment="菜单类型", default=MenuType.MENU
+    )
     route_name: str | None = Column(String(255))
     route_path: str | None = Column(String(128))
     component: str | None = Column(String(128))

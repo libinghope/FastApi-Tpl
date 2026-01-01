@@ -5,7 +5,7 @@ from pydantic import AnyHttpUrl, EmailStr, field_validator
 
 class Settings(BaseSettings):
     PROJECT_NAME: str = "FastAPI Template"
-    API_V1_STR: str = "/api/v1"
+    API_V1_STR: str = "/v1"
 
     MYSQL_USER: str
     MYSQL_PASSWORD: str
