@@ -69,7 +69,7 @@ async def add_notice(
     db.add(new_notice)
     await db.commit()
     await db.refresh(new_notice)
-    return ResponseSchema(message="Success")
+    return ResponseSchema(result=NoticeResponse.model_validate(new_notice).model_dump())
 
 
 @router.post("/update", response_model=ResponseSchema)

@@ -10,10 +10,10 @@ from app.core.codes import ErrorCode
 
 import traceback
 
-router = APIRouter(prefix="/backend", tags=["log"])
+router = APIRouter()
 
 
-@router.get("/logs/visit-trend", response_model=ResponseSchema[dict])
+@router.get("/visit-trend", response_model=ResponseSchema[dict])
 async def visit_trend(
     title: str | None = "",
     user: User = Depends(get_current_user),
@@ -44,7 +44,7 @@ async def visit_trend(
         return response(code=ErrorCode.UNKNOWN_ERROR, message="Unknown error")
 
 
-@router.get("/logs/visit-stats", response_model=ResponseSchema[dict])
+@router.get("/visit-stats", response_model=ResponseSchema[dict])
 async def visit_stats(
     title: str | None = "",
     user: User = Depends(get_current_user),
@@ -61,7 +61,7 @@ async def visit_stats(
     return response(data=data)
 
 
-@router.get("/logs/list", response_model=ResponseSchema[dict])
+@router.get("/list", response_model=ResponseSchema[dict])
 async def log_list(
     keywords: str | None = "",
     date_range: list[str] | None = Query(

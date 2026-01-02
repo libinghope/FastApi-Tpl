@@ -20,18 +20,6 @@ class DeleteMenuForm(BaseModel):
     uid: int
 
 
-def build_menu_tree(menus: List[SysMenu], parent_id: int) -> List[MenuTree]:
-    tree = []
-    for menu in menus:
-        if menu.parent_id == parent_id:
-            node = MenuTree.model_validate(menu)
-            children = build_menu_tree(menus, menu.id)
-            if children:
-                node.children = children
-            tree.append(node)
-    return tree
-
-
 @router.get("/list", response_model=ResponseSchema)
 async def menu_list(
     keywords: str = None,
@@ -172,6 +160,7 @@ def build_route_tree(menus: List[SysMenu], parent_id: int) -> List[dict]:
                 "name": menu.name,
                 "path": menu.route_path,
                 "component": menu.component,
+                "type": menu.type,
                 "meta": {
                     "title": menu.name,
                     "icon": menu.icon,
@@ -180,11 +169,11 @@ def build_route_tree(menus: List[SysMenu], parent_id: int) -> List[dict]:
                     "alwaysShow": True if menu.always_show == 1 else False,
                 },
             }
-            if menu.type == 1:  # Catalog
+            if menu.type == MenuType.CATALOG:  # Catalog
                 route["redirect"] = menu.redirect
 
             children = build_route_tree(menus, menu.id)
-            if children:
+            if children and route["type"] == MenuType.CATALOG:
                 route["children"] = children
 
             tree.append(route)
@@ -208,20 +197,16 @@ async def get_current_user_routes(
         # We need menus where id in (select menu_id from role_menu where role_id in (select role_id from user_role where user_id = current_user.id))
 
         # Subquery for role ids
-        sub_roles = select(SysUserRoleRef.role_id).where(
+        sub_roles_ids = select(SysUserRoleRef.role_id).where(
             SysUserRoleRef.user_id == current_user.id
         )
 
         # Subquery for menu ids
         sub_menus = select(SysRoleMenu.menu_id).where(
-            SysRoleMenu.role_id.in_(sub_roles)
+            SysRoleMenu.role_id.in_(sub_roles_ids)
         )
 
-        stmt = (
-            select(SysMenu)
-            .where(SysMenu.id.in_(sub_menus), SysMenu.type == MenuType.MENU)
-            .order_by(SysMenu.sort)
-        )
+        stmt = select(SysMenu).where(SysMenu.id.in_(sub_menus)).order_by(SysMenu.sort)
 
     result = await db.execute(stmt)
     menus = result.scalars().all()
@@ -229,14 +214,14 @@ async def get_current_user_routes(
     return ResponseSchema(result=build_route_tree(menus, 0))
 
 
-@router.get("/options", response_model=ResponseSchema)
-async def menu_options(
-    db: AsyncSession = Depends(deps.get_db),
-    current_user: SysUser = Depends(deps.get_current_user),
-):
-    stmt = select(SysMenu).order_by(SysMenu.sort)
-    result = await db.execute(stmt)
-    menus = result.scalars().all()
-    return ResponseSchema(
-        message="Success", result=[m.model_dump() for m in build_menu_tree(menus, 0)]
-    )
+# @router.get("/options", response_model=ResponseSchema)
+# async def menu_options(
+#     db: AsyncSession = Depends(deps.get_db),
+#     current_user: SysUser = Depends(deps.get_current_user),
+# ):
+#     stmt = select(SysMenu).order_by(SysMenu.sort)
+#     result = await db.execute(stmt)
+#     menus = result.scalars().all()
+#     return ResponseSchema(
+#         message="Success", result=[m.model_dump() for m in build_menu_tree(menus, 0)]
+#     )

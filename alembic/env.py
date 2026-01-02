@@ -24,6 +24,7 @@ sys.path.append(os.getcwd())
 from app.core.config import settings
 from app.db.base import Base
 from app import models
+from app.models import sys
 
 # add your model's MetaData object here
 # for 'autogenerate' support

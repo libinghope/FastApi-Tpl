@@ -6,9 +6,11 @@ from sqlalchemy import (
     SmallInteger,
     String,
     Text,
-    Integer
+    Integer,
+    UniqueConstraint,
 )
 from app.models.base import BaseModel
+
 
 class SysNotice(BaseModel):
     """通知公告表"""
@@ -32,7 +34,9 @@ class SysUserNotice(BaseModel):
 
     __tablename__ = "sys_user_notice"
 
-    notice_id: int = Column(Integer, primary_key=True)
-    user_id: int = Column(Integer, primary_key=True)
+    notice_id: int = Column(Integer, nullable=False)
+    user_id: int = Column(Integer, nullable=False)
     is_read: bool = Column(Boolean, default=False)
     read_time: datetime | None = Column(DateTime)
+
+    __table_args__ = (UniqueConstraint("notice_id", "user_id"),)
