@@ -2,16 +2,17 @@ from typing import List, Any
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update, delete, desc, distinct
-
 from app.api import deps
+from app.globals.constants import ROOT_ROUTER_PARENT_ID
 from app.globals.enum import MenuType
 from app.models.sys.menu import SysMenu, SysRoleMenu
+from app.models.sys.role import SysRole
 from app.models.sys.user import SysUser, SysUserRoleRef
 from app.schemas.sys.menu import MenuCreate, MenuUpdate, MenuResponse, MenuTree
 from app.schemas.response import ResponseSchema
 from app.core.codes import ErrorCode
-
 from pydantic import BaseModel
+from app.globals.constants import ROOT_ROUTER_PARENT_ID
 
 router = APIRouter()
 
@@ -33,9 +34,7 @@ async def menu_list(
     result = await db.execute(stmt)
     menus = result.scalars().all()
 
-    return ResponseSchema(
-        message="Success", result=[m.model_dump() for m in build_menu_tree(menus, 0)]
-    )
+    return ResponseSchema(message="Success", result=build_menu_tree(menus, 0))
 
 
 @router.post("/add", response_model=ResponseSchema)
@@ -152,6 +151,24 @@ async def delete_menu(
     return ResponseSchema(message="Success")
 
 
+def build_menu_tree(menus: List[SysMenu], parent_id: int) -> List[dict]:
+    tree = []
+    for menu in menus:
+        if menu.parent_id == parent_id and menu.type != MenuType.BUTTON:
+            # Convert menu to dict using vars() and exclude private attributes
+            menu_dict = {
+                key: value
+                for key, value in vars(menu).items()
+                if not key.startswith("_")
+            }
+            # Find children
+            children = build_menu_tree(menus, menu.id)
+            if children:
+                menu_dict["children"] = children
+            tree.append(menu_dict)
+    return tree
+
+
 def build_route_tree(menus: List[SysMenu], parent_id: int) -> List[dict]:
     tree = []
     for menu in menus:
@@ -171,9 +188,8 @@ def build_route_tree(menus: List[SysMenu], parent_id: int) -> List[dict]:
             }
             if menu.type == MenuType.CATALOG:  # Catalog
                 route["redirect"] = menu.redirect
-
             children = build_route_tree(menus, menu.id)
-            if children and route["type"] == MenuType.CATALOG:
+            if children:
                 route["children"] = children
 
             tree.append(route)
@@ -189,7 +205,11 @@ async def get_current_user_routes(
     Get routes for current user
     """
     if current_user.is_superuser:
-        stmt = select(SysMenu).order_by(SysMenu.sort)
+        stmt = (
+            select(SysMenu)
+            .where(SysMenu.type != MenuType.BUTTON)
+            .order_by(SysMenu.sort)
+        )
     else:
         # Check user roles
         # SysUserRoleRef: user_id, role_id
@@ -206,12 +226,16 @@ async def get_current_user_routes(
             SysRoleMenu.role_id.in_(sub_roles_ids)
         )
 
-        stmt = select(SysMenu).where(SysMenu.id.in_(sub_menus)).order_by(SysMenu.sort)
+        stmt = (
+            select(SysMenu)
+            .where(SysMenu.id.in_(sub_menus), SysMenu.type != MenuType.BUTTON)
+            .order_by(SysMenu.sort)
+        )
 
     result = await db.execute(stmt)
     menus = result.scalars().all()
 
-    return ResponseSchema(result=build_route_tree(menus, 0))
+    return ResponseSchema(result=build_route_tree(menus, ROOT_ROUTER_PARENT_ID))
 
 
 # @router.get("/options", response_model=ResponseSchema)

@@ -1,8 +1,8 @@
 """init
 
-Revision ID: f9f79f458f95
+Revision ID: b0a550d1bb81
 Revises: 
-Create Date: 2026-01-02 10:31:06.559728
+Create Date: 2026-01-05 22:58:01.615359
 
 """
 from typing import Sequence, Union
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = 'f9f79f458f95'
+revision: str = 'b0a550d1bb81'
 down_revision: Union[str, Sequence[str], None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -119,12 +119,34 @@ def upgrade() -> None:
     sa.PrimaryKeyConstraint('id')
     )
     op.create_index(op.f('ix_sys_menu_id'), 'sys_menu', ['id'], unique=False)
+    op.create_table('sys_notice',
+    sa.Column('title', sa.String(length=50), nullable=True),
+    sa.Column('content', sa.Text(), nullable=True),
+    sa.Column('type', sa.String(length=50), nullable=False),
+    sa.Column('level', sa.String(length=50), nullable=False),
+    sa.Column('target_type', sa.SmallInteger(), nullable=False),
+    sa.Column('target_user_ids_str', sa.Text(), nullable=True),
+    sa.Column('publisher_id', sa.Integer(), nullable=True),
+    sa.Column('publish_status', sa.SmallInteger(), nullable=True),
+    sa.Column('publish_time', sa.DateTime(), nullable=True),
+    sa.Column('revoke_time', sa.DateTime(), nullable=True),
+    sa.Column('id', sa.Integer(), autoincrement=True, nullable=False),
+    sa.Column('create_time', sa.DateTime(), nullable=True, comment='创建时间'),
+    sa.Column('update_time', sa.DateTime(), nullable=True, comment='更新时间'),
+    sa.Column('delete_time', sa.DateTime(), nullable=True, comment='删除时间'),
+    sa.Column('create_by', sa.String(length=255), nullable=True, comment='创建者'),
+    sa.Column('update_by', sa.String(length=255), nullable=True, comment='更新者'),
+    sa.Column('delete_by', sa.String(length=255), nullable=True, comment='删除者'),
+    sa.Column('remark', sa.String(length=255), nullable=True, comment='备注'),
+    sa.PrimaryKeyConstraint('id')
+    )
+    op.create_index(op.f('ix_sys_notice_id'), 'sys_notice', ['id'], unique=False)
     op.create_table('sys_role',
     sa.Column('name', sa.String(length=100), nullable=False, comment='角色名称'),
     sa.Column('code', sa.String(length=100), nullable=False, comment='角色编码'),
     sa.Column('sort', sa.Integer(), nullable=True),
     sa.Column('status', sa.SmallInteger(), nullable=True, comment='角色状态'),
-    sa.Column('data_scope', sa.SmallInteger(), nullable=True),
+    sa.Column('data_scope', sa.Enum('ALL', 'DEPT_AND_CHILD', 'DEPT', 'SELF', name='roledatascope'), nullable=True, comment='数据范围'),
     sa.Column('id', sa.Integer(), autoincrement=True, nullable=False),
     sa.Column('create_time', sa.DateTime(), nullable=True, comment='创建时间'),
     sa.Column('update_time', sa.DateTime(), nullable=True, comment='更新时间'),
@@ -206,6 +228,8 @@ def downgrade() -> None:
     op.drop_table('sys_role_menu')
     op.drop_index(op.f('ix_sys_role_id'), table_name='sys_role')
     op.drop_table('sys_role')
+    op.drop_index(op.f('ix_sys_notice_id'), table_name='sys_notice')
+    op.drop_table('sys_notice')
     op.drop_index(op.f('ix_sys_menu_id'), table_name='sys_menu')
     op.drop_table('sys_menu')
     op.drop_index(op.f('ix_sys_dict_item_id'), table_name='sys_dict_item')
