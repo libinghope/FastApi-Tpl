@@ -41,21 +41,41 @@ async def get_dept_tree(
     # Build tree
     return ResponseSchema(result=build_dept_tree(depts, 0))
 
+'''
+smpt = select(SysDept).filter(SysDept.is_deleted == False)
+if keywords:
+    smpt = smpt.filter(SysDept.name.like(f"%{keywords}%"))
+depts_cursor = await self.db.execute(smpt)
+all_depts = depts_cursor.scalars().all()
+
+def build_dept_children(parent_uid: str, dept_list: List[SysDept]) -> List[DeptInfo]:
+    children = []
+    for dept in dept_list:
+        if dept.parent_uid == parent_uid:
+            dept_vo = DeptInfo.model_validate(dept)
+            dept_vo.children = build_dept_children(dept_vo.uid, dept_list)
+            children.append(dept_vo)
+    return children
+'''
 
 @router.get("/options", response_model=ResponseSchema)
 async def get_dept_options(
     db: AsyncSession = Depends(deps.get_db),
     current_user: SysUser = Depends(deps.get_current_user),
+    keywords: Optional[str] = None,
 ):
     """
     Get department options (tree structure)
     """
-    stmt = select(SysDept).where(SysDept.status == 1).order_by(SysDept.sort)
+    if keywords:
+        stmt = select(SysDept).filter(SysDept.is_deleted == False).filter(SysDept.name.like(f"%{keywords}%"))
+    else:
+        stmt = select(SysDept).where(SysDept.status == 1).order_by(SysDept.sort)
     result = await db.execute(stmt)
     depts = result.scalars().all()
 
     tree = build_dept_tree(depts, 0)
-    return ResponseSchema(result={"result": [dept.model_dump() for dept in tree]})
+    return ResponseSchema(result= [dept.model_dump() for dept in tree])
 
 
 @router.post("/add", response_model=ResponseSchema)

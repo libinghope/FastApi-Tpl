@@ -30,8 +30,8 @@ class UserResponse(UserBase):
     avatar: Optional[str] = None
     is_superuser: bool
     # Computed/related fields
-    role_ids: List[int] = []
-    
+    roles: List[str] = []
+    perms: List[str] = []
     class Config:
         from_attributes = True
 

@@ -25,3 +25,9 @@ class Gender(str, Enum):
     UNKNOWN = "unknown"
     MALE = "male"
     FEMALE = "female"
+
+class ConfigTypeEnum(str,Enum):
+    STRING = "string"
+    NUMBER = "number"
+    LIST = "list"
+    DICT = "dict"

@@ -1,13 +1,9 @@
 from sqlalchemy import Column, String, Enum as SAEnum
 from sqlalchemy.orm import Mapped, mapped_column
-from enum import Enum as PyEnum
 from app.models.base import BaseModel
+from app.globals.enum import ConfigTypeEnum
 
-class ConfigTypeEnum(PyEnum):
-    STRING = "string"
-    NUMBER = "number"
-    LIST = "list"
-    DICT = "dict"
+
 
 class SysConfig(BaseModel):
     """系统配置表"""

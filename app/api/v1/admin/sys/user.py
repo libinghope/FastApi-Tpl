@@ -10,6 +10,7 @@ from app.api import deps
 from app.core import security
 from app.models.sys.user import SysUser, SysUserRoleRef
 from app.models.sys.dept import SysDept
+from app.models.sys.menu import SysMenu, SysRoleMenu
 from app.models.sys.role import SysRole
 from app.schemas.sys.user import (
     UserCreate,
@@ -38,13 +39,43 @@ async def get_user_me(
     Get current user info
     """
     # Fetch roles
-    stmt = select(SysUserRoleRef.role_id).where(SysUserRoleRef.user_id == user.id)
-    result = await db.execute(stmt)
-    role_ids = result.scalars().all()
+    roles_smpt = await db.execute(
+        select(SysRole)
+        .join(SysUserRoleRef, SysUserRoleRef.role_id == SysRole.id)
+        .where(SysUserRoleRef.user_id == user.id)
+    )
+    role_ids =[] #[role.id for role in roles_smpt.scalars().all()]
+    role_codes =[] #[role.code for role in roles_smpt.scalars().all()]
+    for role in roles_smpt.scalars().all():
+        role_ids.append(role.id)
+        role_codes.append(role.code)
+
+    # Fetch perms
+    if user.is_superuser:
+        perms_smpt = await db.execute(
+            select(SysMenu.perm)
+            .where(
+                SysMenu.perm.isnot(None),
+                SysMenu.is_deleted == False,
+            )
+        )
+    else:
+        perms_smpt = await db.execute(
+                    select(SysMenu.perm)
+                    .join(SysRoleMenu, SysRoleMenu.menu_id == SysMenu.id)
+                    .where(
+                        SysRoleMenu.role_id.in_(role_ids),
+                        SysRoleMenu.is_deleted == False,
+                        SysMenu.perm.isnot(None),
+                        SysMenu.is_deleted == False,
+                    )
+                )
+    perms = perms_smpt.scalars().all()
 
     # Create response
     user_resp = UserResponse.model_validate(user)
-    user_resp.role_ids = list(role_ids)
+    user_resp.roles = list(role_codes)
+    user_resp.perms = list(perms)
     return ResponseSchema(result=user_resp)
 
 

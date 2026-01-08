@@ -1,4 +1,5 @@
 from .item import Item
+from .sys.config import SysConfig
 from .sys.dept import SysDept
 from .sys.dictionary import SysDict, SysDictItem
 from .sys.menu import SysMenu, SysRoleMenu

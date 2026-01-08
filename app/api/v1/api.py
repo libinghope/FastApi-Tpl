@@ -30,7 +30,7 @@ api_router.include_router(
     admin_dict.router, prefix="/admin/sys/dict", tags=["admin-dict"]
 )
 api_router.include_router(
-    admin_dict_item.router, prefix="/admin/sys/dict", tags=["admin-dict-item"]
+    admin_dict_item.router, prefix="/admin/sys/dict-items", tags=["admin-dict-item"]
 )
 api_router.include_router(
     admin_menu.router, prefix="/admin/sys/menu", tags=["admin-menu"]

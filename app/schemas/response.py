@@ -1,5 +1,4 @@
 from typing import Generic, TypeVar, Optional, Any, Union
-from xxlimited import Str
 from pydantic import BaseModel
 from app.core.codes import ErrorCode
 

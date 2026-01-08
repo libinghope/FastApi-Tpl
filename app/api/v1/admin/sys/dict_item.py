@@ -19,7 +19,7 @@ router = APIRouter()
 
 
 @router.get(
-    "/items/{dict_code}/list", response_model=ResponseSchema[List[DictItemResponse]]
+    "/{dict_code}", response_model=ResponseSchema[List[DictItemResponse]]
 )
 async def get_dict_items(
     dict_code: str,

@@ -13,3 +13,4 @@ class BaseModel(Base):
     update_by = Column(String(255), nullable=True, comment="更新者")
     delete_by = Column(String(255), nullable=True, comment="删除者")
     remark = Column(String(255), nullable=True, comment="备注")
+    is_deleted = Column(Integer, default=0, comment="是否删除")
