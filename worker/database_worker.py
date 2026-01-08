@@ -6,42 +6,116 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.core.config import settings
-from app.db.session import SessionLocal
+from app.db.session import SessionLocal, engine
 from app.core.security import get_password_hash
 from app.models.sys.dept import SysDept
 from app.models.sys.dictionary import SysDict, SysDictItem
 from app.models.sys.menu import SysMenu, SysRoleMenu
 from app.models.sys.role import SysRole
 from app.models.sys.user import SysUserRoleRef, SysUser
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlalchemy import text
 from app.globals.enum import RoleDataScope, MenuType
+from app.db.base import Base
 
 
 async def create_initial_data():
     async with SessionLocal() as db:
-        await create_all_data(db)
+        await _create_all_data(db)
         await db.commit()
 
 
-async def create_all_data(db: AsyncSession):
-    create_sys_dict(db)
-    create_sys_dict_data(db)
-    create_sys_dept(db)
-    create_sys_menu(db)
-    create_sys_role(db)
-    create_sys_role_menu(db)
-    create_sys_user(db)
-    create_sys_user_role(db)
+async def check_database_exists(db_name: str) -> bool:
+    """检查数据库是否存在"""
+    db_url_without_db = settings.SQLALCHEMY_DATABASE_URI.rsplit('/', 1)[0]
+    test_engine = create_async_engine(db_url_without_db, echo=False)
+    try:
+        async with test_engine.connect() as conn:
+            result = await conn.execute(text(f"SHOW DATABASES LIKE '{db_name}'"))
+            exists = result.fetchone() is not None
+        return exists
+    finally:
+        await test_engine.dispose()
 
 
-def create_sys_user_role(db: AsyncSession):
+async def create_tables():
+    """创建所有数据库表"""
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    print("Database tables created successfully!")
+
+
+# 删除数据库中，并重新创建
+async def reset_database():
+    """重置数据库：删除并重建数据库、表和初始数据"""
+    print("Starting database reset...")
+    
+    # 检查数据库是否存在
+    db_exists = await check_database_exists(settings.MYSQL_DB)
+    
+    if db_exists:
+        # 删除数据库
+        db_url_without_db = settings.SQLALCHEMY_DATABASE_URI.rsplit('/', 1)[0]
+        test_engine = create_async_engine(db_url_without_db, echo=False)
+        try:
+            async with test_engine.connect() as conn:
+                await conn.execute(text(f"DROP DATABASE IF EXISTS {settings.MYSQL_DB};"))
+                print(f"Database {settings.MYSQL_DB} dropped successfully!")
+        finally:
+            await test_engine.dispose()
+    
+    # 创建数据库
+    db_url_without_db = settings.SQLALCHEMY_DATABASE_URI.rsplit('/', 1)[0]
+    test_engine = create_async_engine(db_url_without_db, echo=False)
+    try:
+        async with test_engine.connect() as conn:
+            await conn.execute(
+                text(
+                    f"CREATE DATABASE {settings.MYSQL_DB} CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;"
+                )
+            )
+            print(f"Database {settings.MYSQL_DB} created successfully!")
+    finally:
+        await test_engine.dispose()
+    
+    # 删除alembic/versions中的所有迁移文件
+    alembic_versions_path = "./alembic/versions"
+    if os.path.exists(alembic_versions_path):
+        for root, dirs, files in os.walk(alembic_versions_path):
+            for file in files:
+                file_path = os.path.join(root, file)
+                os.remove(file_path)
+                print(f"Removed migration file: {file_path}")
+    
+    # 创建数据库表
+    await create_tables()
+    
+    # 初始化数据
+    print("Creating initial data...")
+    await create_initial_data()
+    
+    print("Database reset completed successfully!")
+
+
+async def _create_all_data(db: AsyncSession):
+    _create_sys_dict(db)
+    _create_sys_dict_data(db)
+    _create_sys_dept(db)
+    _create_sys_menu(db)
+    _create_sys_role(db)
+    _create_sys_role_menu(db)
+    _create_sys_user(db)
+    _create_sys_user_role(db)
+
+
+def _create_sys_user_role(db: AsyncSession):
     userRole1 = SysUserRoleRef(user_id=1, role_id=1)
     userRole2 = SysUserRoleRef(user_id=2, role_id=2)
     userRole3 = SysUserRoleRef(user_id=3, role_id=3)
     db.add_all([userRole1, userRole2, userRole3])
 
 
-def create_sys_user(db: AsyncSession):
+def _create_sys_user(db: AsyncSession):
     user1 = SysUser(
         id=1,
         username="root",
@@ -73,7 +147,7 @@ def create_sys_user(db: AsyncSession):
     db.add_all([user1, user2, user3])
 
 
-def create_sys_role_menu(db: AsyncSession):
+def _create_sys_role_menu(db: AsyncSession):
     roleMenu1 = SysRoleMenu(role_id=2, menu_id=1)
     roleMenu2 = SysRoleMenu(role_id=2, menu_id=2)
     roleMenu3 = SysRoleMenu(role_id=2, menu_id=3)
@@ -234,7 +308,7 @@ def create_sys_role_menu(db: AsyncSession):
     )
 
 
-def create_sys_role(db: AsyncSession):
+def _create_sys_role(db: AsyncSession):
     role1 = SysRole(
         id=1, name="超级管理员", code="ROOT", sort=1, data_scope=RoleDataScope.ALL
     )
@@ -329,7 +403,7 @@ def create_sys_role(db: AsyncSession):
     )
 
 
-def create_sys_menu(db: AsyncSession):
+def _create_sys_menu(db: AsyncSession):
     menu1 = SysMenu(
         id=1,
         parent_id=0,
@@ -645,7 +719,7 @@ def create_sys_menu(db: AsyncSession):
         sort=1,
         icon="api",
         redirect="",
-        is_deleted=False,
+        is_deleted=True,
     )
     menu23 = SysMenu(
         id=70,
@@ -1388,6 +1462,90 @@ def create_sys_menu(db: AsyncSession):
         icon="el-icon-Picture",
         perm="3d:upload:image",
     )
+    menu75 = SysMenu(
+        id=400,
+        parent_id=1,
+        tree_path="0,1",
+        name="备份管理",
+        type=MenuType.MENU,
+        route_name="Notice",
+        route_path="notice",
+        component="system/notice/index",
+        visible=1,
+        sort=9,
+        icon="",
+        redirect="",
+    )
+    menu60 = SysMenu(
+        id=401,
+        parent_id=400,
+        tree_path="0,1,400",
+        name="查询",
+        type=MenuType.BUTTON,
+        route_name=None,
+        route_path="",
+        component=None,
+        visible=1,
+        sort=1,
+        icon="",
+        perm="sys:notice:query",
+    )
+    menu61 = SysMenu(
+        id=402,
+        parent_id=400,
+        tree_path="0,1,400",
+        name="新增",
+        type=MenuType.BUTTON,
+        route_name=None,
+        route_path="",
+        component=None,
+        visible=1,
+        sort=2,
+        icon="",
+        perm="sys:notice:add",
+    )
+    menu62 = SysMenu(
+        id=403,
+        parent_id=400,
+        tree_path="0,1,400",
+        name="编辑",
+        type=MenuType.BUTTON,
+        route_name=None,
+        route_path="",
+        component=None,
+        visible=1,
+        sort=3,
+        icon="",
+        perm="sys:notice:edit",
+    )
+    menu63 = SysMenu(
+        id=404,
+        parent_id=400,
+        tree_path="0,1,400",
+        name="删除",
+        type=MenuType.BUTTON,
+        route_name=None,
+        route_path="",
+        component=None,
+        visible=1,
+        sort=4,
+        icon="",
+        perm="sys:notice:delete",
+    )
+    menu64 = SysMenu(
+        id=405,
+        parent_id=400,
+        tree_path="0,1,400",    
+        name="发布",
+        type=MenuType.BUTTON,
+        route_name=None,
+        route_path="",
+        component=None,
+        visible=1,
+        sort=5,
+        icon="",
+        perm="sys:notice:publish",
+    )
     db.add_all(
         [
             menu1,
@@ -1466,7 +1624,7 @@ def create_sys_menu(db: AsyncSession):
     )
 
 
-def create_sys_dict_data(db: AsyncSession):
+def _create_sys_dict_data(db: AsyncSession):
     sys_dict_data1 = SysDictItem(
         id=1, dict_code="gender", value="1", label="男", tag_type="primary", sort=1
     )
@@ -1566,14 +1724,14 @@ def create_sys_dict_data(db: AsyncSession):
     )
 
 
-def create_sys_dict(db: AsyncSession):
+def _create_sys_dict(db: AsyncSession):
     sys_dict1 = SysDict(id=1, code="gender", name="性别", status=1)
     sys_dict2 = SysDict(id=2, code="notice_type", name="通知类型", status=1)
     sys_dict3 = SysDict(id=3, code="notice_level", name="通知级别", status=1)
     db.add_all([sys_dict1, sys_dict2, sys_dict3])
 
 
-def create_sys_dept(db: AsyncSession):
+def _create_sys_dept(db: AsyncSession):
     sys_dept1 = SysDept(
         id=1, name="技术部", code="YOULAI", parent_id=0, tree_path="0", sort=0
     )
