@@ -499,6 +499,7 @@ def create_sys_menu(db: AsyncSession):
         sort=8,
         icon="document",
         redirect="",
+        is_deleted=True,
     )
     # INSERT INTO `sys_menu` VALUES (30, 26, '0,26', '文档(外链)', 3, NULL, 'https://juejin.cn/post/7228990409909108793', '', NULL, NULL, NULL, 1, 2, 'link', '', now(), now(), NULL);
     menu13 = SysMenu(
@@ -514,6 +515,7 @@ def create_sys_menu(db: AsyncSession):
         sort=2,
         icon="link",
         redirect="",
+        is_deleted=True,
     )
     # INSERT INTO `sys_menu` VALUES (31, 2, '0,1,2', '用户新增', 4, NULL, '', NULL, 'sys:user:add', NULL, NULL, 1, 1, '', '', now(), now(), NULL);
     menu14 = SysMenu(
@@ -643,6 +645,7 @@ def create_sys_menu(db: AsyncSession):
         sort=1,
         icon="api",
         redirect="",
+        is_deleted=False,
     )
     menu23 = SysMenu(
         id=70,
@@ -839,6 +842,7 @@ def create_sys_menu(db: AsyncSession):
         sort=12,
         icon="menu",
         redirect="",
+        is_deleted=True,
     )
     menu37 = SysMenu(
         id=90,
@@ -853,6 +857,7 @@ def create_sys_menu(db: AsyncSession):
         sort=3,
         icon="",
         redirect="",
+        is_deleted=True,
     )
     menu38 = SysMenu(
         id=91,
@@ -867,6 +872,7 @@ def create_sys_menu(db: AsyncSession):
         sort=4,
         icon="",
         redirect="",
+        is_deleted=True,
     )
     menu39 = SysMenu(
         id=95,
@@ -880,6 +886,8 @@ def create_sys_menu(db: AsyncSession):
         visible=1,
         sort=4,
         icon="",
+        redirect="",
+        is_deleted=True,
     )
     menu40 = SysMenu(
         id=97,
@@ -893,6 +901,8 @@ def create_sys_menu(db: AsyncSession):
         visible=1,
         sort=2,
         icon="el-icon-Notification",
+        redirect="",
+        is_deleted=True,
     )
     menu41 = SysMenu(
         id=102,
@@ -907,6 +917,7 @@ def create_sys_menu(db: AsyncSession):
         sort=1,
         icon="document",
         redirect="",
+        is_deleted=True,
     )
     menu42 = SysMenu(
         id=105,
@@ -962,6 +973,7 @@ def create_sys_menu(db: AsyncSession):
         visible=1,
         sort=0,
         icon="",
+        is_deleted=True,
     )
     menu46 = SysMenu(
         id=109,
@@ -975,6 +987,7 @@ def create_sys_menu(db: AsyncSession):
         visible=1,
         sort=1,
         icon="",
+        is_deleted=True,
     )
     menu47 = SysMenu(
         id=110,
@@ -989,6 +1002,7 @@ def create_sys_menu(db: AsyncSession):
         sort=11,
         icon="el-icon-ElementPlus",
         redirect="",
+        is_deleted=True,
     )
     menu48 = SysMenu(
         id=111,
@@ -1004,6 +1018,7 @@ def create_sys_menu(db: AsyncSession):
         icon="el-icon-Star",
         redirect="",
         params='{"type": "1"}',
+        is_deleted=True,
     )
     menu49 = SysMenu(
         id=112,
@@ -1019,6 +1034,7 @@ def create_sys_menu(db: AsyncSession):
         icon="el-icon-StarFilled",
         redirect="",
         params='{"type": "2"}',
+        is_deleted=True,
     )
     menu50 = SysMenu(
         id=117,
@@ -1061,6 +1077,7 @@ def create_sys_menu(db: AsyncSession):
         sort=1,
         icon="code",
         redirect="",
+        is_deleted=True,
     )
     menu53 = SysMenu(
         id=120,

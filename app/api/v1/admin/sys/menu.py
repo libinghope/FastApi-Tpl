@@ -29,7 +29,7 @@ async def menu_list(
 ):
     stmt = select(SysMenu).order_by(SysMenu.sort)
     if keywords:
-        stmt = stmt.where(SysMenu.name.like(f"%{keywords}%"))
+        stmt = stmt.where(SysMenu.name.like(f"%{keywords}%"),SysMenu.is_deleted==False)
 
     result = await db.execute(stmt)
     menus = result.scalars().all()
@@ -207,7 +207,7 @@ async def get_current_user_routes(
     if current_user.is_superuser:
         stmt = (
             select(SysMenu)
-            .where(SysMenu.type != MenuType.BUTTON)
+            .where(SysMenu.type != MenuType.BUTTON,SysMenu.is_deleted==False)
             .order_by(SysMenu.sort)
         )
     else:
@@ -228,7 +228,7 @@ async def get_current_user_routes(
 
         stmt = (
             select(SysMenu)
-            .where(SysMenu.id.in_(sub_menus), SysMenu.type != MenuType.BUTTON)
+            .where(SysMenu.id.in_(sub_menus), SysMenu.type != MenuType.BUTTON,SysMenu.is_deleted==False)
             .order_by(SysMenu.sort)
         )
 

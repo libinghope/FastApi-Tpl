@@ -1,8 +1,8 @@
 """init
 
-Revision ID: 921a3144fb19
+Revision ID: 19af4db0e395
 Revises: 
-Create Date: 2026-01-06 15:43:04.224797
+Create Date: 2026-01-08 11:15:47.058262
 
 """
 from typing import Sequence, Union
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = '921a3144fb19'
+revision: str = '19af4db0e395'
 down_revision: Union[str, Sequence[str], None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -32,11 +32,29 @@ def upgrade() -> None:
     sa.Column('update_by', sa.String(length=255), nullable=True, comment='更新者'),
     sa.Column('delete_by', sa.String(length=255), nullable=True, comment='删除者'),
     sa.Column('remark', sa.String(length=255), nullable=True, comment='备注'),
+    sa.Column('is_deleted', sa.Integer(), nullable=True, comment='是否删除'),
     sa.PrimaryKeyConstraint('id')
     )
     op.create_index(op.f('ix_items_description'), 'items', ['description'], unique=False)
     op.create_index(op.f('ix_items_id'), 'items', ['id'], unique=False)
     op.create_index(op.f('ix_items_title'), 'items', ['title'], unique=False)
+    op.create_table('sys_config',
+    sa.Column('name', sa.String(length=50), nullable=False),
+    sa.Column('key', sa.String(length=50), nullable=False),
+    sa.Column('value', sa.String(length=2048), nullable=False),
+    sa.Column('type', sa.Enum('STRING', 'NUMBER', 'LIST', 'DICT', name='configtypeenum'), nullable=False, comment='配置类型'),
+    sa.Column('id', sa.Integer(), autoincrement=True, nullable=False),
+    sa.Column('create_time', sa.DateTime(), nullable=True, comment='创建时间'),
+    sa.Column('update_time', sa.DateTime(), nullable=True, comment='更新时间'),
+    sa.Column('delete_time', sa.DateTime(), nullable=True, comment='删除时间'),
+    sa.Column('create_by', sa.String(length=255), nullable=True, comment='创建者'),
+    sa.Column('update_by', sa.String(length=255), nullable=True, comment='更新者'),
+    sa.Column('delete_by', sa.String(length=255), nullable=True, comment='删除者'),
+    sa.Column('remark', sa.String(length=255), nullable=True, comment='备注'),
+    sa.Column('is_deleted', sa.Integer(), nullable=True, comment='是否删除'),
+    sa.PrimaryKeyConstraint('id')
+    )
+    op.create_index(op.f('ix_sys_config_id'), 'sys_config', ['id'], unique=False)
     op.create_table('sys_dept',
     sa.Column('name', sa.String(length=100), nullable=False, comment='部门名称'),
     sa.Column('code', sa.String(length=100), nullable=False, comment='部门编号'),
@@ -52,6 +70,7 @@ def upgrade() -> None:
     sa.Column('update_by', sa.String(length=255), nullable=True, comment='更新者'),
     sa.Column('delete_by', sa.String(length=255), nullable=True, comment='删除者'),
     sa.Column('remark', sa.String(length=255), nullable=True, comment='备注'),
+    sa.Column('is_deleted', sa.Integer(), nullable=True, comment='是否删除'),
     sa.PrimaryKeyConstraint('id'),
     sa.UniqueConstraint('code')
     )
@@ -70,6 +89,7 @@ def upgrade() -> None:
     sa.Column('update_by', sa.String(length=255), nullable=True, comment='更新者'),
     sa.Column('delete_by', sa.String(length=255), nullable=True, comment='删除者'),
     sa.Column('remark', sa.String(length=255), nullable=True, comment='备注'),
+    sa.Column('is_deleted', sa.Integer(), nullable=True, comment='是否删除'),
     sa.PrimaryKeyConstraint('id')
     )
     op.create_index(op.f('ix_sys_dict_code'), 'sys_dict', ['code'], unique=False)
@@ -89,6 +109,7 @@ def upgrade() -> None:
     sa.Column('update_by', sa.String(length=255), nullable=True, comment='更新者'),
     sa.Column('delete_by', sa.String(length=255), nullable=True, comment='删除者'),
     sa.Column('remark', sa.String(length=255), nullable=True, comment='备注'),
+    sa.Column('is_deleted', sa.Integer(), nullable=True, comment='是否删除'),
     sa.PrimaryKeyConstraint('id')
     )
     op.create_index(op.f('ix_sys_dict_item_id'), 'sys_dict_item', ['id'], unique=False)
@@ -116,6 +137,7 @@ def upgrade() -> None:
     sa.Column('update_by', sa.String(length=255), nullable=True, comment='更新者'),
     sa.Column('delete_by', sa.String(length=255), nullable=True, comment='删除者'),
     sa.Column('remark', sa.String(length=255), nullable=True, comment='备注'),
+    sa.Column('is_deleted', sa.Integer(), nullable=True, comment='是否删除'),
     sa.PrimaryKeyConstraint('id')
     )
     op.create_index(op.f('ix_sys_menu_id'), 'sys_menu', ['id'], unique=False)
@@ -138,6 +160,7 @@ def upgrade() -> None:
     sa.Column('update_by', sa.String(length=255), nullable=True, comment='更新者'),
     sa.Column('delete_by', sa.String(length=255), nullable=True, comment='删除者'),
     sa.Column('remark', sa.String(length=255), nullable=True, comment='备注'),
+    sa.Column('is_deleted', sa.Integer(), nullable=True, comment='是否删除'),
     sa.PrimaryKeyConstraint('id')
     )
     op.create_index(op.f('ix_sys_notice_id'), 'sys_notice', ['id'], unique=False)
@@ -155,6 +178,7 @@ def upgrade() -> None:
     sa.Column('update_by', sa.String(length=255), nullable=True, comment='更新者'),
     sa.Column('delete_by', sa.String(length=255), nullable=True, comment='删除者'),
     sa.Column('remark', sa.String(length=255), nullable=True, comment='备注'),
+    sa.Column('is_deleted', sa.Integer(), nullable=True, comment='是否删除'),
     sa.PrimaryKeyConstraint('id')
     )
     op.create_index(op.f('ix_sys_role_id'), 'sys_role', ['id'], unique=False)
@@ -169,6 +193,7 @@ def upgrade() -> None:
     sa.Column('update_by', sa.String(length=255), nullable=True, comment='更新者'),
     sa.Column('delete_by', sa.String(length=255), nullable=True, comment='删除者'),
     sa.Column('remark', sa.String(length=255), nullable=True, comment='备注'),
+    sa.Column('is_deleted', sa.Integer(), nullable=True, comment='是否删除'),
     sa.PrimaryKeyConstraint('id'),
     sa.UniqueConstraint('role_id', 'menu_id')
     )
@@ -194,6 +219,7 @@ def upgrade() -> None:
     sa.Column('update_by', sa.String(length=255), nullable=True, comment='更新者'),
     sa.Column('delete_by', sa.String(length=255), nullable=True, comment='删除者'),
     sa.Column('remark', sa.String(length=255), nullable=True, comment='备注'),
+    sa.Column('is_deleted', sa.Integer(), nullable=True, comment='是否删除'),
     sa.PrimaryKeyConstraint('id')
     )
     op.create_index(op.f('ix_sys_user_id'), 'sys_user', ['id'], unique=False)
@@ -211,6 +237,7 @@ def upgrade() -> None:
     sa.Column('update_by', sa.String(length=255), nullable=True, comment='更新者'),
     sa.Column('delete_by', sa.String(length=255), nullable=True, comment='删除者'),
     sa.Column('remark', sa.String(length=255), nullable=True, comment='备注'),
+    sa.Column('is_deleted', sa.Integer(), nullable=True, comment='是否删除'),
     sa.PrimaryKeyConstraint('id'),
     sa.UniqueConstraint('notice_id', 'user_id')
     )
@@ -226,6 +253,7 @@ def upgrade() -> None:
     sa.Column('update_by', sa.String(length=255), nullable=True, comment='更新者'),
     sa.Column('delete_by', sa.String(length=255), nullable=True, comment='删除者'),
     sa.Column('remark', sa.String(length=255), nullable=True, comment='备注'),
+    sa.Column('is_deleted', sa.Integer(), nullable=True, comment='是否删除'),
     sa.PrimaryKeyConstraint('id'),
     sa.UniqueConstraint('user_id', 'role_id')
     )
@@ -259,6 +287,8 @@ def downgrade() -> None:
     op.drop_index('uk_code', table_name='sys_dept', mysql_length=100)
     op.drop_index(op.f('ix_sys_dept_id'), table_name='sys_dept')
     op.drop_table('sys_dept')
+    op.drop_index(op.f('ix_sys_config_id'), table_name='sys_config')
+    op.drop_table('sys_config')
     op.drop_index(op.f('ix_items_title'), table_name='items')
     op.drop_index(op.f('ix_items_id'), table_name='items')
     op.drop_index(op.f('ix_items_description'), table_name='items')

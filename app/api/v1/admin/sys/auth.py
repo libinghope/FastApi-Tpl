@@ -115,3 +115,15 @@ async def get_captcha():
             captcha_key=captcha_key,
         )
     )
+
+
+@router.delete("/logout")
+async def logout(
+    db: AsyncSession = Depends(deps.get_db),
+    current_user: SysUser = Depends(deps.get_current_user),
+):
+    """
+    Logout
+    """
+    await security.delete_login_token(current_user.id)
+    return response()
